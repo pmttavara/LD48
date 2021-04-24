@@ -399,8 +399,8 @@ int main() {
     pip_desc.shader = shd;
     sg_pipeline pip = sg_make_pipeline(pip_desc);
     
-#define key(vk) (cast(unsigned short) GetKeyState(vk) >= 0x8000)
-#define keydown(vk) (keydown[vk])
+#define key(vk) (GetFocus() == hwnd && cast(unsigned short) GetKeyState(vk) >= 0x8000)
+#define keydown(vk) (GetFocus() == hwnd && keydown[vk])
     
     set_fullscreen(hwnd, true);
     //double last = get_time();
@@ -416,6 +416,10 @@ int main() {
             if ((msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN)
                 && (msg.lParam & 0xffff) == 1) {
                 keydown[msg.wParam] = true;
+            } else if (msg.message == WM_LBUTTONDOWN) {
+                keydown[VK_LBUTTON] = true;
+            } else if (msg.message == WM_RBUTTONDOWN) {
+                keydown[VK_RBUTTON] = true;
             }
             TranslateMessage(&msg);
             DispatchMessageA(&msg);
@@ -434,7 +438,7 @@ int main() {
         sg_apply_pipeline(pip);
         sg_apply_bindings(&bind);
         
-        if (key('R')) {
+        if (key('R') || keydown(VK_LBUTTON)) {
             pos = {1,0};
             vel = {};
         }
