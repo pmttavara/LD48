@@ -308,21 +308,53 @@ static void get_d3d11_device(sg_desc *desc, int framebuffer_width, int framebuff
     }
 };
 #define v2(...) V2{__VA_ARGS__}
-/*
+
+#define EntityTypeEnum(Name) EntityType_##Name,
+#define EntityMember(Name) Name as_##Name;
+#define EntityMethod(Name) \
+Name &_##Name() { \
+assert(type == EntityType_##Name); \
+return *cast(Name *) this; \
+} \
+operator Name &() { return _##Name(); } \
+operator Name *() { return &_##Name(); }
+#define EntityCtor(Name) \
+Entity(const Name &param_##Name) { \
+type = EntityType_##Name; \
+_##Name() = param_##Name; \
+} \
+Entity(Name &&param_##Name) { \
+type = EntityType_##Name; \
+_##Name() = param_##Name; \
+}
+
+#define EntityList(X) \
+X(Guy) \
+X(Bullet) \
+
+enum EntityType {
+    EntityType_Invalid,
+    EntityList(EntityTypeEnum)
+        
+        EntityType_Count
+};
 struct EntityBase {
+    EntityType type = EntityType_Invalid;
     V2 pos = {};
     V2 vel = {};
 };
 struct Guy : EntityBase {
-    
+    V2 aim_direction = {};
 };
-enum EntityType {
-    
+struct Bullet : EntityBase {
 };
-struct Entity {
-    EntityType;
-}*/
-
+struct Entity : EntityBase {
+    Entity() = default;
+    EntityList(EntityMethod);
+    EntityList(EntityCtor);
+    union EntityUnion { EntityList(EntityMember); };
+    char padding[sizeof(EntityUnion) - sizeof(EntityBase)];
+};
 
 #include "assets.h"
 
@@ -379,14 +411,20 @@ int main() {
     /* a shader to render the triangle */
     sg_shader_desc shd_desc = {};
     
-    V2 pos = {1, 0};
-    V2 vel = {};
+    Array<Entity> entities = {};
+    {
+        Guy guy = {};
+        guy.pos = {1, 0};
+        guy.vel = {};
+        entities.push(guy);
+    }
+     Guy *guy = entities[0];
     
     shd_desc.attrs[0].sem_name = "POS";
     shd_desc.attrs[1].sem_name = "COLOR";
     shd_desc.vs.source = shd_h;
     shd_desc.vs.entry = "vsmain";
-    shd_desc.vs.uniform_blocks[0].size = sizeof(pos);
+    shd_desc.vs.uniform_blocks[0].size = sizeof(guy->pos);
     shd_desc.fs.source = shd_h;
     shd_desc.fs.entry = "fsmain";
     sg_shader shd = sg_make_shader(shd_desc);
@@ -439,21 +477,23 @@ int main() {
         sg_apply_bindings(&bind);
         
         if (key('R') || keydown(VK_LBUTTON)) {
-            pos = {1,0};
-            vel = {};
+            guy->pos = {1,0};
+            guy->vel = {};
         }
         
-        vel.x += (key('D') - key('A')) * dt;
-        vel.y += (key('W') - key('S')) * dt;
-        vel.x += (key(VK_RIGHT) - key(VK_LEFT)) * dt;
-        vel.y += (key(VK_UP) - key(VK_DOWN)) * dt;
+        guy->vel.x += (key('D') - key('A')) * dt;
+        guy->vel.y += (key('W') - key('S')) * dt;
+        guy->vel.x += (key(VK_RIGHT) - key(VK_LEFT)) * dt;
+        guy->vel.y += (key(VK_UP) - key(VK_DOWN)) * dt;
         
-        if (pos.magsq() > 0.02f) {
-            vel -= pos.hat() * 0.01f / pos.magsq() * dt;
+        for (auto & e : entities) {
+            if (e.pos.magsq() > 0.0001f) {
+                e.vel -= e.pos.hat() * 0.01f / e.pos.magsq() * dt;
+            }
+            e.pos += e.vel * dt;
         }
         
-        pos += vel * dt;
-        sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(pos));
+        sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(guy->pos));
         sg_draw(0, 3, 1);
         
         {
