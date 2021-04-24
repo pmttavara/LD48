@@ -31,6 +31,7 @@ cbuffer pos {
     float2 pos;
     float theta;
     float2 scale;
+    float2 camera_scale;
 }
 struct vs_in {
     float4 pos: POS;

@@ -370,9 +370,10 @@ int main() {
         wndclass.lpszClassName = "wndclass",
         wndclass.hCursor = LoadCursorA(null, cast(LPCSTR) IDC_ARROW),
         RegisterClassA(&wndclass);
-        //hwnd = CreateWindowExA(0, "wndclass", "LD48", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, SW_SHOW, 640, 480, null, null, hinstance, null);
-        // For stream!
-        hwnd = CreateWindowExA(0, "wndclass", "LD48", WS_OVERLAPPEDWINDOW, -1300, 300, 640, 480, null, null, hinstance, null);
+        hwnd = CreateWindowExA(0, "wndclass", "Ringularity", WS_OVERLAPPEDWINDOW,
+                                   //CW_USEDEFAULT, SW_SHOW,
+                                   -1300, 300, // For stream!
+                                   640, 480, null, null, hinstance, null);
     }
     int window_w = 1;
     int window_h = 1;
@@ -416,6 +417,7 @@ int main() {
         Guy guy = {};
         guy.pos = {1, 0};
         guy.vel = {};
+        guy.aim_direction = {};
         entities.push(guy);
     }
      Guy *guy = entities[0];
