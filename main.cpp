@@ -337,11 +337,10 @@ int main() {
         wndclass.lpszClassName = "wndclass",
         wndclass.hCursor = LoadCursorA(null, cast(LPCSTR) IDC_ARROW),
         RegisterClassA(&wndclass);
-        //hwnd = CreateWindowExA(0, "wndclass", "LD48", WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, SW_SHOW, 640, 480, null, null, hinstance, null);
+        //hwnd = CreateWindowExA(0, "wndclass", "LD48", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, SW_SHOW, 640, 480, null, null, hinstance, null);
         // For stream!
-        hwnd = CreateWindowExA(0, "wndclass", "LD48", WS_OVERLAPPEDWINDOW | WS_VISIBLE, -1300, 300, 640, 480, null, null, hinstance, null);
+        hwnd = CreateWindowExA(0, "wndclass", "LD48", WS_OVERLAPPEDWINDOW, -1300, 300, 640, 480, null, null, hinstance, null);
     }
-    set_fullscreen(hwnd, true);
     int window_w = 1;
     int window_h = 1;
     {
@@ -358,6 +357,8 @@ int main() {
     
     /* default pass action (clear to grey) */
     sg_pass_action pass_action = { 0 };
+    pass_action.colors[0].action = SG_ACTION_CLEAR;
+    pass_action.colors[0].value = {0,0,0,1};
     
     /* a vertex buffer with the triangle vertices */
     const float vertices[] = {
@@ -399,6 +400,7 @@ int main() {
 #define key(vk) (cast(unsigned short) GetKeyState(vk) >= 0x8000)
 #define keydown(vk) (keydown[vk])
     
+    set_fullscreen(hwnd, true);
     double last = get_time();
     while (true) {
         double next = get_time();
@@ -439,6 +441,7 @@ int main() {
         sg_end_pass();
         sg_commit();
         
+        ShowWindow(hwnd, true);
         if (_sapp_win32_update_dimensions(hwnd, window_w, window_h)) {
             _sapp_d3d11_resize_default_render_target();
         } else {
