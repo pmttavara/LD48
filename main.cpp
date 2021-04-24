@@ -252,17 +252,17 @@ static void get_d3d11_device(sg_desc *desc, int framebuffer_width, int framebuff
 }
 
  struct V2 {
-    float x = 0;
-    float y = 0;
+    f32 x = 0;
+    f32 y = 0;
     V2() = default;
-    V2(float x, float y) : x{x}, y{y} {}
-    float dot(V2 rhs) {
+    V2(f32 x, f32 y) : x{x}, y{y} {}
+    f32 dot(V2 rhs) {
         return x * rhs.x + y * rhs.y;
     }
-    float magsq() {
+    f32 magsq() {
         return x * x + y * y;
     }
-    float mag() {
+    f32 mag() {
         return sqrtf(magsq());
     }
     void operator+=(V2 v) {
@@ -279,18 +279,18 @@ static void get_d3d11_device(sg_desc *desc, int framebuffer_width, int framebuff
     V2 operator-(V2 v) {
         return {x - v.x, y - v.y};
     }
-    void operator*=(float f) {
+    void operator*=(f32 f) {
         x *= f;
         y *= f;
     }
-    V2 operator*(float f) {
+    V2 operator*(f32 f) {
         return {x * f, y * f};
     }
-    void operator/=(float f) {
+    void operator/=(f32 f) {
         x /= f;
         y /= f;
     }
-    V2 operator/(float f) {
+    V2 operator/(f32 f) {
         return {x / f, y / f};
     }
     V2 operator-() {
@@ -298,7 +298,7 @@ static void get_d3d11_device(sg_desc *desc, int framebuffer_width, int framebuff
     }
     V2 hat() {
         V2 v = *this;
-        float m = magsq();
+        f32 m = magsq();
         if (m) {
             m = 1 / sqrtf(m);
         }
@@ -356,6 +356,14 @@ struct Entity : EntityBase {
     char padding[sizeof(EntityUnion) - sizeof(EntityBase)];
 };
 
+struct shd_Vs_Uniform {
+    V2 pos;
+    f32 theta;
+     f32 scale;
+    V2 camera_pos;
+    f32 camera_scale;
+};
+shd_Vs_Uniform shd_vs_uniform;
 #include "assets.h"
 
 int main() {
@@ -395,7 +403,7 @@ int main() {
     pass_action.colors[0].value = {0,0,0,1};
     
     /* a vertex buffer with the triangle vertices */
-    const float vertices[] = {
+    const f32 vertices[] = {
         /* positions            colors */
         0.0f, 0.5f, 0.5f,      1.0f, 0.0f, 0.0f, 1.0f,
         0.5f, -0.5f, 0.5f,     0.0f, 1.0f, 0.0f, 1.0f,
@@ -415,8 +423,8 @@ int main() {
     Array<Entity> entities = {};
     {
         Guy guy = {};
-        guy.pos = {1, 0};
-        guy.vel = {};
+        guy.pos = {3, 0};
+        guy.vel = {0, 0.5f};
         guy.aim_direction = {};
         entities.push(guy);
     }
@@ -426,7 +434,7 @@ int main() {
     shd_desc.attrs[1].sem_name = "COLOR";
     shd_desc.vs.source = shd_h;
     shd_desc.vs.entry = "vsmain";
-    shd_desc.vs.uniform_blocks[0].size = sizeof(guy->pos);
+    shd_desc.vs.uniform_blocks[0].size = sizeof(shd_Vs_Uniform);
     shd_desc.fs.source = shd_h;
     shd_desc.fs.entry = "fsmain";
     sg_shader shd = sg_make_shader(shd_desc);
@@ -443,12 +451,10 @@ int main() {
 #define keydown(vk) (GetFocus() == hwnd && keydown[vk])
     
     set_fullscreen(hwnd, true);
-    //double last = get_time();
-    const float dt = 1.0f / 120;
+    double last = get_time();
+    const f32 dt = 1.0f / 1000;
     while (true) {
-        //double next = get_time();
-        //float dt = cast(float) (next - last);
-        //last = next;
+        while (get_time() - last < dt);
         enum { VK_COUNT = 256 };
         bool keydown[VK_COUNT] = {};
         MSG msg = {};
@@ -478,31 +484,58 @@ int main() {
         sg_apply_pipeline(pip);
         sg_apply_bindings(&bind);
         
-        if (key('R') || keydown(VK_LBUTTON)) {
-            guy->pos = {1,0};
-            guy->vel = {};
+        if (keydown('R') || keydown(VK_LBUTTON)) {
+            guy->pos = {3, 0};
+            guy->vel = {0, 0.5f};
         }
         
-        guy->vel.x += (key('D') - key('A')) * dt;
-        guy->vel.y += (key('W') - key('S')) * dt;
-        guy->vel.x += (key(VK_RIGHT) - key(VK_LEFT)) * dt;
-        guy->vel.y += (key(VK_UP) - key(VK_DOWN)) * dt;
+        const float G = 1;
+        const float M = 1;
+        const float c = 1;
+        const float schwarzchild_radius = 2 * G * M / (c * c);
         
+        shd_vs_uniform.camera_pos = {};//guy->pos;
+            shd_vs_uniform.camera_scale = 0.2f;
         for (auto & e : entities) {
+            // Gravitational time dilation
+            float localDt = dt * sqrtf(1 - (2 * G * M) / (e.pos.mag() * c * c));
+            
+            guy->vel.x += (key('D') - key('A')) * localDt;
+            guy->vel.y += (key('W') - key('S')) * localDt;
+            guy->vel.x += (key(VK_RIGHT) - key(VK_LEFT)) * localDt;
+            guy->vel.y += (key(VK_UP) - key(VK_DOWN)) * localDt;
+            
             if (e.pos.magsq() > 0.0001f) {
-                e.vel -= e.pos.hat() * 0.01f / e.pos.magsq() * dt;
+                //e.vel -= e.pos.hat() * 10.0f / powf(e.pos.magsq(), 5.0f / 2) * dt;
+                e.vel -= e.pos.hat() * 10.0f / e.pos.magsq() * localDt;
             }
-            e.pos += e.vel * dt;
+            e.pos += e.vel * localDt;
+            shd_vs_uniform.pos = e.pos;
+            shd_vs_uniform.theta = 0;
+            shd_vs_uniform.scale = 0.3f;
+        sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
+        sg_draw(0, 3, 1);
         }
         
-        sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(guy->pos));
-        sg_draw(0, 3, 1);
+        {
+            shd_vs_uniform.pos = {};
+            shd_vs_uniform.scale = 0.1f;
+            sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
+            sg_draw(0, 3, 1);
+            
+            const int N = 128;
+            for (int i = 0; i < N; i += 1) {
+                shd_vs_uniform.pos = v2(cosf(cast(f32) i / N * 3.14159f * 2), sinf(cast(f32) i / N * 3.14159f * 2)) * schwarzchild_radius;
+                sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
+                sg_draw(0, 3, 1);
+            }
+        }
         
         {
             POINT p;
             GetCursorPos(&p);
              ScreenToClient(hwnd, &p);
-            V2 mouse_pos = {cast(float) p.x / window_w, cast(float) -p.y / window_h};
+            V2 mouse_pos = {cast(f32) p.x / window_w, cast(f32) -p.y / window_h};
             mouse_pos = mouse_pos*2 + v2(-1, +1);
             sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(mouse_pos));
             sg_draw(0, 3, 1);

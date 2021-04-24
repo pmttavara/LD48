@@ -46,6 +46,27 @@ using u32 = uint32_t;
 using s32 = int32_t;
 using u64 = uint64_t;
 using s64 = int64_t;
+using f32 = float;
+using f64 = double;
+
+template <class T, class U> auto min(T a, U b) {
+    return a < b ? a : b;
+}
+template <class T, class U> auto max(T a, U b) {
+    return a > b ? a : b;
+}
+template <class T, class U> auto lerp(T a, U b, f32 t) {
+    return a * (1 - t) + b * t;
+}
+template <class T, class U, class V> auto clamp(T t, U min, V max) {
+    return t >= min ? t <= max ? t : max : min;
+}
+template <class T> auto abs(T x) {
+    return x >= 0 ? x : -x;
+}
+template <class T> T sign(T x) {
+    return (x > 0) - (x < 0);
+}
 
 struct String {
     s64 len = 0;
@@ -82,6 +103,42 @@ struct String {
 constexpr String operator "" _s(const char * p, size_t n) {
     return {cast(s64) n + 1, cast(u8 *) p};
 }
+
+bool string_heads_match(String a, String b) {
+    if (!a || !b) return (!a) == (!b);
+    
+    s64 length_to_check = min(a.len, b.len);
+    for (s64 i = 0; i < length_to_check; i += 1) {
+        if (a[i] != b[i]) return false;
+    }
+    
+    return true;
+}
+
+String split(String &s, u8 ch) {
+    while (s && s[0] == ch) ++s;
+    auto result = s;
+    
+    while (s && s[0] != ch) ++s;
+    result.len = s.ptr - result.ptr;
+    
+    return result;
+}
+String split_by_line(String &s) {
+    if (s && (s[0] == '\r' || s[0] == '\n')) {
+        if (s.len > 1 && s[0] + s[1] == '\r' + '\n') ++s; // @Attribution for addition trick goes to Sean Barrett (@nothings)
+        ++s;
+    }
+    
+    auto result = s;
+    
+    while (s && (s[0] != '\r' && s[0] != '\n')) ++s;
+    result.len = s.ptr - result.ptr;
+    
+    return result;
+}
+
+//String trim_whitespace(String )
 
 struct Memory_Block {
     u64 len = 0;
