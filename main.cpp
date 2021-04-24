@@ -251,9 +251,9 @@ static void get_d3d11_device(sg_desc *desc, int framebuffer_width, int framebuff
     desc->context.d3d11.depth_stencil_view_cb = d3d11_depth_stencil_view_cb;
 }
 
-union V2 {
-    float e[2] = {};
-    struct { float x, y; };
+ struct V2 {
+    float x = 0;
+    float y = 0;
     V2() = default;
     V2(float x, float y) : x{x}, y{y} {}
     float dot(V2 rhs) {
@@ -265,35 +265,36 @@ union V2 {
     float mag() {
         return sqrtf(magsq());
     }
-    V2 &operator+=(V2 v) {
+    void operator+=(V2 v) {
         x += v.x;
         y += v.y;
-        return *this;
     }
     V2 operator+(V2 v) {
-        return V2{*this} += v;
+        return {x + v.x, y + v.y};
     }
-    V2 &operator*=(float f) {
+    void operator-=(V2 v) {
+        x -= v.x;
+        y -= v.y;
+    }
+    V2 operator-(V2 v) {
+        return {x - v.x, y - v.y};
+    }
+    void operator*=(float f) {
         x *= f;
         y *= f;
-        return *this;
     }
     V2 operator*(float f) {
-        return V2{*this} *= f;
+        return {x * f, y * f};
     }
-    V2 &operator/=(float f) {
+    void operator/=(float f) {
         x /= f;
         y /= f;
-        return *this;
     }
     V2 operator/(float f) {
-        return V2{*this} /= f;
+        return {x / f, y / f};
     }
     V2 operator-() {
-        V2 v = *this;
-        x = -x;
-        y = -y;
-        return v;
+        return {-x, -y};
     }
     V2 hat() {
         V2 v = *this;
@@ -378,8 +379,9 @@ int main() {
     /* a shader to render the triangle */
     sg_shader_desc shd_desc = {};
     
-    float vel[2] = {};
-    float pos[2] = {};
+    V2 pos = {1, 0};
+    V2 vel = {};
+    
     shd_desc.attrs[0].sem_name = "POS";
     shd_desc.attrs[1].sem_name = "COLOR";
     shd_desc.vs.source = shd_h;
@@ -401,11 +403,12 @@ int main() {
 #define keydown(vk) (keydown[vk])
     
     set_fullscreen(hwnd, true);
-    double last = get_time();
+    //double last = get_time();
+    const float dt = 1.0f / 120;
     while (true) {
-        double next = get_time();
-        float dt = cast(float) (next - last);
-        last = next;
+        //double next = get_time();
+        //float dt = cast(float) (next - last);
+        //last = next;
         enum { VK_COUNT = 256 };
         bool keydown[VK_COUNT] = {};
         MSG msg = {};
@@ -430,14 +433,35 @@ int main() {
         sg_begin_default_pass(&pass_action, window_w, window_h);
         sg_apply_pipeline(pip);
         sg_apply_bindings(&bind);
-        vel[0] += (key('D') - key('A')) * dt;
-        vel[1] += (key('W') - key('S')) * dt;
-        vel[0] += (key(VK_RIGHT) - key(VK_LEFT)) * dt;
-        vel[1] += (key(VK_UP) - key(VK_DOWN)) * dt;
-        pos[0] += vel[0] * dt;
-        pos[1] += vel[1] * dt;
+        
+        if (key('R')) {
+            pos = {1,0};
+            vel = {};
+        }
+        
+        vel.x += (key('D') - key('A')) * dt;
+        vel.y += (key('W') - key('S')) * dt;
+        vel.x += (key(VK_RIGHT) - key(VK_LEFT)) * dt;
+        vel.y += (key(VK_UP) - key(VK_DOWN)) * dt;
+        
+        if (pos.magsq() > 0.02f) {
+            vel -= pos.hat() * 0.01f / pos.magsq() * dt;
+        }
+        
+        pos += vel * dt;
         sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(pos));
         sg_draw(0, 3, 1);
+        
+        {
+            POINT p;
+            GetCursorPos(&p);
+             ScreenToClient(hwnd, &p);
+            V2 mouse_pos = {cast(float) p.x / window_w, cast(float) -p.y / window_h};
+            mouse_pos = mouse_pos*2 + v2(-1, +1);
+            sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(mouse_pos));
+            sg_draw(0, 3, 1);
+        }
+        
         sg_end_pass();
         sg_commit();
         
@@ -445,8 +469,9 @@ int main() {
         if (_sapp_win32_update_dimensions(hwnd, window_w, window_h)) {
             _sapp_d3d11_resize_default_render_target();
         } else {
-            _sapp_dxgi_swap_chain->Present(1, 0);
+            _sapp_dxgi_swap_chain->Present(0, 0);
         }
+        Sleep(cast(DWORD)(1000 * dt));
     }
     sg_shutdown();
     return 0;

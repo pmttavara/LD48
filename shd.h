@@ -30,6 +30,7 @@ float3 oklab_to_linear_srgb(float3 c) {
 cbuffer pos {
     float2 pos;
     float theta;
+    float2 scale;
 }
 struct vs_in {
     float4 pos: POS;
