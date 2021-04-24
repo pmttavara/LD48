@@ -365,9 +365,11 @@ int main() {
         wndclass.lpszClassName = "wndclass",
         wndclass.hCursor = LoadCursorA(null, cast(LPCSTR) IDC_ARROW),
         RegisterClassA(&wndclass);
-        hwnd = CreateWindowExA(0, "wndclass", "LD48", WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, SW_SHOW, 640, 480, null, null, hinstance, null);
+        //hwnd = CreateWindowExA(0, "wndclass", "LD48", WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, SW_SHOW, 640, 480, null, null, hinstance, null);
+        // For stream!
+        hwnd = CreateWindowExA(0, "wndclass", "LD48", WS_OVERLAPPEDWINDOW | WS_VISIBLE, -1300, 300, 640, 480, null, null, hinstance, null);
     }
-    //set_fullscreen(hwnd, true);
+    set_fullscreen(hwnd, true);
     int window_w = 1;
     int window_h = 1;
     {
