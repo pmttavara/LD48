@@ -2,4 +2,9 @@ main.exe
 main.ilk
 main.obj
 main.pdb
+packer.exe
+packer.ilk
+packer.obj
+packer.pdb
 .vs/*
+assets.h

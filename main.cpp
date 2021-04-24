@@ -1,113 +1,12 @@
-#pragma warning(disable: 4800)
-#pragma warning(disable: 4100)
-#pragma warning(disable: 4505)
-#pragma comment(lib, "user32.lib")
-#define WIN32_LEAN_AND_MEAN
-#define VC_EXTRALEAN
-#define NOMINMAX
-#include <Windows.h>
-#include <stdint.h>
+#include "common.hpp"
+
 #define SOKOL_ASSERT(c) assert(c)
 #define SOKOL_D3D11
-
-int assert_(const char *s) {
-    int x = MessageBoxA(NULL, s, "Assert Fired", 0x2112);
-    if (x == 3) ExitProcess(1);
-    return x == 4;
-}
-#define assert_2(LINE) #LINE
-#define assert_1(LINE) assert_2(LINE)
-#define assert(e) ((e) || assert_("At " __FILE__ ":" assert_1(__LINE__) ":\n\n" #e "\n\nPress Retry to debug.") && (__debugbreak(), 0))
-//#define D3D11_NO_HELPERS
-//#define CINTERFACE
-//#define COBJMACROS
-
 #include <d3d11.h>
 #include <d3dcompiler.h>
 
 #define SOKOL_GFX_IMPL
 #include "sokol_gfx.h"
-
-#define null nullptr
-#define cast(T) (T)
-#define switch
-
-using u8 = uint8_t;
-using s8 = int8_t;
-using u16 = uint16_t;
-using s16 = int16_t;
-using u32 = uint32_t;
-using s32 = int32_t;
-using u64 = uint64_t;
-using s64 = int64_t;
-
-struct String {
-    constexpr String(u8 *p, s64 n) : ptr{p}, len{n} {}
-    u8 *ptr = null;
-    s64 len = 0;
-    void invariants() {
-        assert(len >= 0);
-        assert(!ptr || len);
-    }
-    explicit operator bool() { return ptr; }
-    String &operator ++() {
-        invariants();
-        ++ptr;
-        --len;
-        return *this;
-    }
-    u8 &operator[](s64 i) {
-        invariants();
-        assert(i < len);
-        return ptr[i];
-    }
-};
-constexpr String operator "" _s(const char * p, size_t n) {
-    return String{cast(u8 *) p, cast(s64) n};
-}
-
-struct Memory_Block {
-    u8 *ptr = null;
-    u64 len = 0;
-};
-enum struct Allocator_Mode {
-    Allocate,
-    Reallocate,
-    Free,
-    Free_All
-    };
-using Allocator_Proc = bool(void *allocator_data, Memory_Block *block, Allocator_Mode mode, u64 size);
-
-struct Allocator {
-    Allocator_Proc *proc = null;
-    void *data = null;
-    bool allocate(Memory_Block *block, u64 n) {
-        assert(block);
-        assert(proc);
-        return proc(data, block, Allocator_Mode::Allocate, n);
-    }
-     bool reallocate(Memory_Block *block, u64 n) {
-        assert(block);
-        assert(proc);
-        return proc(data, block, Allocator_Mode::Reallocate, n);
-    }
-    void free(Memory_Block *block) {
-        assert(block);
-        assert(proc);
-        proc(data, block, Allocator_Mode::Free, 0);
-    }
-    void free_all() {
-        assert(proc);
-        proc(data, null, Allocator_Mode::Free_All, 0);
-    }
-};
-
-#include <stdio.h>
-auto log = [](auto &&... args) {
-    printf(args...);
-    puts("");
-    fflush(stdout);
-};
 
 void quit() {
     ExitProcess(0);
@@ -131,7 +30,7 @@ intptr_t wnd_proc(HWND hwnd, unsigned int umsg, size_t wparam, intptr_t lparam) 
     return DefWindowProcA(hwnd, umsg, wparam, lparam);
 }
 
- double get_time(void) {
+double get_time(void) {
     static double invfreq;
     union _LARGE_INTEGER li;
     if (invfreq == 0) {
@@ -277,8 +176,8 @@ static void _sapp_d3d11_resize_default_render_target(void) {
     if (_sapp_dxgi_swap_chain) {
         _sapp_d3d11_destroy_default_render_target();
         _sapp_dxgi_swap_chain->ResizeBuffers(1,
-                                     (unsigned int)_sapp_framebuffer_width,
-                                     (unsigned int)_sapp_framebuffer_height, DXGI_FORMAT_B8G8R8A8_UNORM, 0);
+                                             (unsigned int)_sapp_framebuffer_width,
+                                             (unsigned int)_sapp_framebuffer_height, DXGI_FORMAT_B8G8R8A8_UNORM, 0);
         _sapp_d3d11_create_default_render_target();
     }
 }
@@ -343,7 +242,7 @@ static void get_d3d11_device(sg_desc *desc, int framebuffer_width, int framebuff
         
         pDXGIFactory->MakeWindowAssociation(hWnd, DXGI_MWA_NO_ALT_ENTER);
     }
-
+    
     _sapp_d3d11_create_default_render_target();
     
     desc->context.d3d11.device = _sapp_d3d11_device;
@@ -352,6 +251,79 @@ static void get_d3d11_device(sg_desc *desc, int framebuffer_width, int framebuff
     desc->context.d3d11.depth_stencil_view_cb = d3d11_depth_stencil_view_cb;
 }
 
+union V2 {
+    float e[2] = {};
+    struct { float x, y; };
+    V2() = default;
+    V2(float x, float y) : x{x}, y{y} {}
+    float dot(V2 rhs) {
+        return x * rhs.x + y * rhs.y;
+    }
+    float magsq() {
+        return x * x + y * y;
+    }
+    float mag() {
+        return sqrtf(magsq());
+    }
+    V2 &operator+=(V2 v) {
+        x += v.x;
+        y += v.y;
+        return *this;
+    }
+    V2 operator+(V2 v) {
+        return V2{*this} += v;
+    }
+    V2 &operator*=(float f) {
+        x *= f;
+        y *= f;
+        return *this;
+    }
+    V2 operator*(float f) {
+        return V2{*this} *= f;
+    }
+    V2 &operator/=(float f) {
+        x /= f;
+        y /= f;
+        return *this;
+    }
+    V2 operator/(float f) {
+        return V2{*this} /= f;
+    }
+    V2 operator-() {
+        V2 v = *this;
+        x = -x;
+        y = -y;
+        return v;
+    }
+    V2 hat() {
+        V2 v = *this;
+        float m = magsq();
+        if (m) {
+            m = 1 / sqrtf(m);
+        }
+        v.x *= m;
+        v.y *= m;
+        return v;
+    }
+};
+#define v2(...) V2{__VA_ARGS__}
+/*
+struct EntityBase {
+    V2 pos = {};
+    V2 vel = {};
+};
+struct Guy : EntityBase {
+    
+};
+enum EntityType {
+    
+};
+struct Entity {
+    EntityType;
+}*/
+
+
+#include "assets.h"
 
 int main() {
     log("Hello, world!");
@@ -405,38 +377,22 @@ int main() {
     /* a shader to render the triangle */
     sg_shader_desc shd_desc = {};
     
+    float vel[2] = {};
     float pos[2] = {};
     shd_desc.attrs[0].sem_name = "POS";
     shd_desc.attrs[1].sem_name = "COLOR";
-    shd_desc.vs.source =
-        "cbuffer pos { float2 pos; }"
-            "struct vs_in {\n"
-            "  float4 pos: POS;\n"
-            "  float4 color: COLOR;\n"
-            "};\n"
-            "struct vs_out {\n"
-            "  float4 color: COLOR0;\n"
-            "  float4 pos: SV_Position;\n"
-            "};\n"
-            "vs_out main(vs_in inp) {\n"
-            "  vs_out outp;\n"
-        "  outp.pos = inp.pos;\n"
-        "  outp.pos.xy += pos;\n"
-            "  outp.color = inp.color;\n"
-            "  return outp;\n"
-        "}\n";
+    shd_desc.vs.source = shd_h;
+    shd_desc.vs.entry = "vsmain";
     shd_desc.vs.uniform_blocks[0].size = sizeof(pos);
-    shd_desc.fs.source =
-            "float4 main(float4 color: COLOR0): SV_Target0 {\n"
-            "  return color;\n"
-        "}\n";
+    shd_desc.fs.source = shd_h;
+    shd_desc.fs.entry = "fsmain";
     sg_shader shd = sg_make_shader(shd_desc);
     
     /* a pipeline object */
     sg_pipeline_desc pip_desc = {};
-        /* if the vertex layout doesn't have gaps, don't need to provide strides and offsets */
+    /* if the vertex layout doesn't have gaps, don't need to provide strides and offsets */
     pip_desc.layout.attrs[0].format = SG_VERTEXFORMAT_FLOAT3;
-        pip_desc.layout.attrs[1].format = SG_VERTEXFORMAT_FLOAT4;
+    pip_desc.layout.attrs[1].format = SG_VERTEXFORMAT_FLOAT4;
     pip_desc.shader = shd;
     sg_pipeline pip = sg_make_pipeline(pip_desc);
     
@@ -453,7 +409,7 @@ int main() {
         MSG msg = {};
         while (PeekMessageA(&msg, hwnd, 0, 0, PM_REMOVE)) {
             if ((msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN)
-                    && (msg.lParam & 0xffff) == 1) {
+                && (msg.lParam & 0xffff) == 1) {
                 keydown[msg.wParam] = true;
             }
             TranslateMessage(&msg);
@@ -472,8 +428,12 @@ int main() {
         sg_begin_default_pass(&pass_action, window_w, window_h);
         sg_apply_pipeline(pip);
         sg_apply_bindings(&bind);
-        pos[0] += (key('D') - key('A')) * dt;
-        pos[1] += (key('W') - key('S')) * dt;
+        vel[0] += (key('D') - key('A')) * dt;
+        vel[1] += (key('W') - key('S')) * dt;
+        vel[0] += (key(VK_RIGHT) - key(VK_LEFT)) * dt;
+        vel[1] += (key(VK_UP) - key(VK_DOWN)) * dt;
+        pos[0] += vel[0] * dt;
+        pos[1] += vel[1] * dt;
         sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(pos));
         sg_draw(0, 3, 1);
         sg_end_pass();
@@ -482,7 +442,7 @@ int main() {
         if (_sapp_win32_update_dimensions(hwnd, window_w, window_h)) {
             _sapp_d3d11_resize_default_render_target();
         } else {
-            _sapp_dxgi_swap_chain->Present(0, 0);
+            _sapp_dxgi_swap_chain->Present(1, 0);
         }
     }
     sg_shutdown();
