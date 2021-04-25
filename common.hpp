@@ -67,6 +67,9 @@ template <class T> auto abs(T x) {
 template <class T> T sign(T x) {
     return (x > 0) - (x < 0);
 }
+template <class T> T sq(T x) {
+    return x * x;
+}
 
 struct Memory_Block;
 struct String {

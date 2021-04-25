@@ -319,8 +319,8 @@ Name &_##Name() { \
 assert(type == EntityType_##Name); \
 return *cast(Name *) this; \
 } \
-operator Name &() { return _##Name(); } \
-operator Name *() { return &_##Name(); }
+explicit operator Name &() { return _##Name(); } \
+explicit operator Name *() { return &_##Name(); }
 #define EntityCtor(Name) \
 Entity(const Name &param_##Name) { \
 assert(param_##Name.type == EntityType_##Name); \
@@ -400,10 +400,14 @@ float lorentz(V2 v) {
 }
 V2 add_vel(V2 u, V2 v) { // returns u'
     float first = 1 / (1 + v.dot(u) / c / c);
-    float alpha_v = inv_lorentz(v);
+    float alpha_v = lorentz(v);
     //V2 u_along_v = v * v.dot(u) / v.magsq();
     V2 u_along_v = v.hat() * v.hat().dot(u);
     return first * (alpha_v * u + v + (1 - alpha_v) * u_along_v);
+}
+
+V2 accel_from_force(V2 F, V2 v) {
+    return inv_lorentz(v) * (F - v.dot(F) * v / c / c);
 }
 
 int main() {
@@ -536,7 +540,8 @@ int main() {
     }
     
     double last = get_time();
-    const f32 dt = 1.0f / 120;
+    const f32 dt = 1.0f / 1000;
+    const f32 timescale = 4.0f;
     while (true) {
         while (get_time() - last < dt);
         enum { VK_COUNT = 256 };
@@ -584,7 +589,7 @@ int main() {
         auto find_guy = [&]() -> Guy * {
             for (auto &e : entities) {
                 if (e.type == EntityType_Guy) {
-                    return e;
+                    return cast(Guy *) &e;
                 }
             }
             return null;
@@ -595,48 +600,60 @@ int main() {
         if (guy) { guy_general = dilation_general(*guy); guy_special = dilation_special(*guy); }
         //log("largest dt %g", largest_dt);
         for (auto &e : entities) {
-            f32 dt_ = dt;
+            f32 dt_ = dt;// * timescale;
             if (guy) {
-                //dt_ *= clamp(guy->pos.mag() / schwarzschild_radius - 0.5f, 0.01f, 1.0f);
+                //dt_ *= clamp(sq(guy->pos.mag() / schwarzschild_radius), 0.01f, 1.0f);
             }
             f32 general = dilation_general(e) / guy_general;
             f32 special = dilation_special(e) / guy_special;
             // @Temporary
             if (&e == cast(EntityBase *) guy) {
+                //assert(general * special == 1);
                 f32 speed = c / 100;
                 V2 input = {
                     (f32)(key('D') - key('A') + key(VK_RIGHT) - key(VK_LEFT)),
                     (f32)(key('W') - key('S') + key(VK_UP) - key(VK_DOWN)),
                 };
-                V2 accel = input.hat() * speed * dt_ * general * special;
-                accel *= inv_lorentz(e.vel);
-                e.vel = add_vel(e.vel, accel);
+                V2 force = input.hat() * speed;// * general * special;
+                V2 accel = accel_from_force(force, e.vel);
+                e.vel = add_vel(e.vel, accel * dt_ * general * special);
+                //e.vel += accel * dt_ * general * special;
+                assert(e.vel.mag() < c * general * special && "movement");
+                //e.vel += accel;
             }
             
+            if (e.pos.magsq() < sq(schwarzschild_radius * 0.1f)) { e.scheduled_for_destruction = true; continue; }
             {
                  f32 r2 = e.pos.magsq();
                 f32 r3 = r2 * e.pos.mag();
                 f32 r4 = r2 * r2;
-                V2 accel = (-e.pos.hat() * (G * M / r2 - L * L / r3 + 3 * G * M * L * L / (c * c * r4)));
-                //accel *= lorentz(e.vel);
+                V2 force = (-e.pos.hat() * (G * M / r2 - L * L / r3 + 3 * G * M * L * L / (c * c * r4)));
+                force *= lorentz(e.vel);
+                //e.vel = add_vel(e.vel, force * dt_ * general * special);
+                V2 accel = accel_from_force(force, e.vel);
                 e.vel = add_vel(e.vel, accel * dt_ * general * special);
+                //e.vel += accel * dt_ * general * special;
+                assert(e.vel.mag() < c && "gravity");
+                //e.vel += accel * dt_ * general * special;
             }
             if (e.pos.magsq() < schwarzschild_radius * schwarzschild_radius) {
                 // Fudge velocities so they point down
-                e.vel -= e.vel.hat() * max(0, e.pos.hat().dot(e.vel));
+                //e.vel -= e.vel.hat() * max(0, e.pos.hat().dot(e.vel));
+                assert(e.vel.mag() < c && "interior");
             }
-            
-            if (e.vel.mag() >= c) {
-                e.scheduled_for_destruction = true;
+            //e.vel *= lorentz(e.vel);
+            //if (e.vel.mag() >= c) { e.scheduled_for_destruction = true; }
+            if (e.vel.mag() > c * 0.195f) {
+                //e.vel *= c * 0.195f / e.vel.mag();
+                //assert(e.vel.mag() <= c * 0.1951f);
             }
-            /*if (e.vel.mag() > c * 0.99f * general * special) {
-                e.vel *= c * 0.99f * general * special / e.vel.mag();
-                assert(e.vel.mag() <= c * 0.991f * general * special);
-            }*/
+            //assert(e.vel.mag() < c * general * special && "integrating");
+            assert(e.vel.mag() < c && "integrating");
             e.pos += e.vel * dt_ * general * special;
         }
         for (s64 i = 0; i < entities.count;) {
             if (entities[i].scheduled_for_destruction) {
+                if (cast(Guy *) &entities[i] == guy) guy = null;
                 entities.remove(i);
             } else {
                 i += 1;
@@ -653,16 +670,16 @@ int main() {
         static int skipped = 0;
         skipped += 1;
         if (skipped % 10 != 0) continue;
-        //sg_begin_default_pass(key('R') ? clear_action : load_action, window_w, window_h);
-        sg_begin_default_pass(clear_action, window_w, window_h);
+        sg_begin_default_pass(key('R') ? clear_action : load_action, window_w, window_h);
+        //sg_begin_default_pass(clear_action, window_w, window_h);
         sg_apply_pipeline(pip);
         sg_apply_bindings(&bind);
         
         bool draw_inside = false;
         if (guy && guy->pos.mag() < schwarzschild_radius) draw_inside = true;
         shd_vs_uniform.camera_pos = {};
-        if (guy) shd_vs_uniform.camera_pos = guy->pos;
-        if (guy) shd_vs_uniform.camera_scale = 0.5f / (guy->pos.mag() * 1);
+        //if (guy) shd_vs_uniform.camera_pos = guy->pos;
+        //if (guy) shd_vs_uniform.camera_scale = 0.6f / clamp(guy->pos.mag(), 0, schwarzschild_radius * 2);
         for (auto &e : entities) {
             if (!draw_inside && e.pos.mag() < schwarzschild_radius) continue;
             shd_vs_uniform.pos = e.pos;
@@ -672,10 +689,13 @@ int main() {
             sg_draw(0, 3, 1);
         }
         {
+            
             shd_vs_uniform.pos = {};
             shd_vs_uniform.scale = 0.02f / shd_vs_uniform.camera_scale;
+            if (draw_inside) {
             sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
-            sg_draw(0, 3, 1);
+                sg_draw(0, 3, 1);
+            }
             
             const int N = 128;
             for (int i = 0; i < N; i += 1) {
@@ -706,7 +726,7 @@ int main() {
         } else {
             _sapp_dxgi_swap_chain->Present(0, 0);
         }
-        Sleep(cast(DWORD)(1000 * dt));
+        //Sleep(cast(DWORD)(1000 * dt));
     }
     sg_shutdown();
     return 0;
