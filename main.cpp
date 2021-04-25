@@ -536,7 +536,7 @@ int main() {
     }
     
     double last = get_time();
-    const f32 dt = 1.0f / 1000;
+    const f32 dt = 1.0f / 120;
     while (true) {
         while (get_time() - last < dt);
         enum { VK_COUNT = 256 };
@@ -596,6 +596,9 @@ int main() {
         //log("largest dt %g", largest_dt);
         for (auto &e : entities) {
             f32 dt_ = dt;
+            if (guy) {
+                //dt_ *= clamp(guy->pos.mag() / schwarzschild_radius - 0.5f, 0.01f, 1.0f);
+            }
             f32 general = dilation_general(e) / guy_general;
             f32 special = dilation_special(e) / guy_special;
             // @Temporary
@@ -622,6 +625,7 @@ int main() {
                 // Fudge velocities so they point down
                 e.vel -= e.vel.hat() * max(0, e.pos.hat().dot(e.vel));
             }
+            
             if (e.vel.mag() >= c) {
                 e.scheduled_for_destruction = true;
             }
@@ -649,15 +653,16 @@ int main() {
         static int skipped = 0;
         skipped += 1;
         if (skipped % 10 != 0) continue;
-        sg_begin_default_pass(key('R') ? clear_action : load_action, window_w, window_h);
-        //sg_begin_default_pass(clear_action, window_w, window_h);
+        //sg_begin_default_pass(key('R') ? clear_action : load_action, window_w, window_h);
+        sg_begin_default_pass(clear_action, window_w, window_h);
         sg_apply_pipeline(pip);
         sg_apply_bindings(&bind);
         
         bool draw_inside = false;
         if (guy && guy->pos.mag() < schwarzschild_radius) draw_inside = true;
         shd_vs_uniform.camera_pos = {};
-        //if (guy) shd_vs_uniform.camera_pos = guy->pos;
+        if (guy) shd_vs_uniform.camera_pos = guy->pos;
+        if (guy) shd_vs_uniform.camera_scale = 0.5f / (guy->pos.mag() * 1);
         for (auto &e : entities) {
             if (!draw_inside && e.pos.mag() < schwarzschild_radius) continue;
             shd_vs_uniform.pos = e.pos;
