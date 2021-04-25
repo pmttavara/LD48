@@ -618,11 +618,11 @@ int main() {
                 V2 accel = accel_from_force(force, e.vel);
                 e.vel = add_vel(e.vel, accel * dt_ * general * special);
                 //e.vel += accel * dt_ * general * special;
-                assert(e.vel.mag() < c * general * special && "movement");
+                //assert(e.vel.mag() < c * general * special && "movement");
                 //e.vel += accel;
             }
             
-            if (e.pos.magsq() < sq(schwarzschild_radius * 0.1f)) { e.scheduled_for_destruction = true; continue; }
+            if (e.pos.magsq() < sq(schwarzschild_radius * 0.01f)) { e.scheduled_for_destruction = true; continue; }
             {
                  f32 r2 = e.pos.magsq();
                 f32 r3 = r2 * e.pos.mag();
@@ -633,22 +633,23 @@ int main() {
                 V2 accel = accel_from_force(force, e.vel);
                 e.vel = add_vel(e.vel, accel * dt_ * general * special);
                 //e.vel += accel * dt_ * general * special;
-                assert(e.vel.mag() < c && "gravity");
+                //assert(e.vel.mag() < c && "gravity");
                 //e.vel += accel * dt_ * general * special;
             }
             if (e.pos.magsq() < schwarzschild_radius * schwarzschild_radius) {
                 // Fudge velocities so they point down
-                //e.vel -= e.vel.hat() * max(0, e.pos.hat().dot(e.vel));
+                e.vel -= e.vel.hat() * max(0, e.pos.hat().dot(e.vel));
+                e.pos *= min(1, (0.9999f * schwarzschild_radius) / e.pos.mag());
                 assert(e.vel.mag() < c && "interior");
             }
             //e.vel *= lorentz(e.vel);
             //if (e.vel.mag() >= c) { e.scheduled_for_destruction = true; }
-            if (e.vel.mag() > c * 0.195f) {
-                //e.vel *= c * 0.195f / e.vel.mag();
-                //assert(e.vel.mag() <= c * 0.1951f);
+            if (e.vel.mag() > c * 0.999f) {
+                e.vel *= c * 0.999f / e.vel.mag();
+                assert(e.vel.mag() <= c * 0.9991f);
             }
             //assert(e.vel.mag() < c * general * special && "integrating");
-            assert(e.vel.mag() < c && "integrating");
+            //assert(e.vel.mag() < c && "integrating");
             e.pos += e.vel * dt_ * general * special;
         }
         for (s64 i = 0; i < entities.count;) {
