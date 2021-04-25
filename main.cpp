@@ -378,6 +378,7 @@ shd_Vs_Uniform shd_vs_uniform;
 
 const f32 G = 6.67430e-11f;
 const f32 c = 299792458.0f;
+const f32 L = 100;
 const f32 desired_schwarzschild_radius = 1000000000.0f;//149597900000.0f;
 const f32 M = c * c * desired_schwarzschild_radius / 2 / G;
 const f32 schwarzschild_radius = 2 * G * M / (c * c);
@@ -427,10 +428,11 @@ int main() {
         sg_setup(&sokol_state);
     }
     
-    /* default pass action (clear to grey) */
-    sg_pass_action pass_action = { 0 };
-    pass_action.colors[0].action = SG_ACTION_CLEAR;
-    pass_action.colors[0].value = {0,0,0,1};
+    sg_pass_action clear_action = { 0 };
+    clear_action.colors[0].action = SG_ACTION_CLEAR;
+    clear_action.colors[0].value = {0,0,0,1};
+    sg_pass_action load_action = { 0 };
+    load_action.colors[0].action = SG_ACTION_LOAD;
     
     /* a vertex buffer with the triangle vertices */
     const f32 vertices[] = {
@@ -473,7 +475,7 @@ int main() {
     set_fullscreen(hwnd, true);
     
     log("%g", schwarzschild_radius);
-    shd_vs_uniform.camera_scale = 0.5f / (schwarzschild_radius * 3 / 2);
+    shd_vs_uniform.camera_scale = 0.5f / (schwarzschild_radius * 3);
     
     restart:;
     // Newtonian orbital velocity.
@@ -482,40 +484,46 @@ int main() {
         return sqrtf(G * M / r) * v2(-pos.y, pos.x).hat();
     };
     Array<Entity> entities = {};
-    {
+    if (1) {
         Guy guy = {};
-        guy.pos = {schwarzschild_radius * 3 / 2, 0};
-        guy.vel = get_orbital_velocity(guy.pos) * 0.5f;
+        guy.pos = {schwarzschild_radius * 4, 0};
+        guy.vel = get_orbital_velocity(guy.pos) * 0.9f;
         guy.aim_direction = {};
         entities.push(guy);
     }
     {
         Bullet bullet = {};
-        bullet.pos = {-schwarzschild_radius * 3 / 2, 0};
+        bullet.pos = {-schwarzschild_radius * 4, 0};
+        bullet.vel = get_orbital_velocity(bullet.pos) * 0.9f;
+        entities.push(bullet);
+    }
+    {
+        Bullet bullet = {};
+        bullet.pos = {-schwarzschild_radius * 4, 0};
         bullet.vel = get_orbital_velocity(bullet.pos);
         entities.push(bullet);
     }
     {
         Bullet bullet = {};
-        bullet.pos = {0, -schwarzschild_radius * 3 / 2};
+        bullet.pos = {0, -schwarzschild_radius * 4};
         bullet.vel = get_orbital_velocity(bullet.pos);
         entities.push(bullet);
     }
     {
         Bullet bullet = {};
-        bullet.pos = {0, +schwarzschild_radius * 3 / 2};
+        bullet.pos = {0, +schwarzschild_radius * 4};
         bullet.vel = get_orbital_velocity(bullet.pos);
         entities.push(bullet);
     }
     {
         Bullet bullet = {};
-        bullet.pos = {-schwarzschild_radius * 2, schwarzschild_radius * 2};
+        bullet.pos = {-schwarzschild_radius * 4, schwarzschild_radius * 4};
         bullet.vel = get_orbital_velocity(bullet.pos);
         entities.push(bullet);
     }
     
     double last = get_time();
-    const f32 dt = 1.0f / 480;
+    const f32 dt = 1.0f / 1000;
     while (true) {
         while (get_time() - last < dt);
         enum { VK_COUNT = 256 };
@@ -547,10 +555,6 @@ int main() {
             set_fullscreen(hwnd, !is_fullscreen(hwnd));
         }
         
-        sg_begin_default_pass(&pass_action, window_w, window_h);
-        sg_apply_pipeline(pip);
-        sg_apply_bindings(&bind);
-        
         auto get_time_dilation_factor = [&](EntityBase &e) {
             // Schwarzschild solution to the Einstein field equations
             f32 r = e.pos.mag();
@@ -578,11 +582,11 @@ int main() {
             // velocities. Just stay slow and fudge it!
             f32 factor = 1;
             if (r > schwarzschild_radius) {
-                factor = sqrtf(1 - 2 * G * M / r / c / c - e.vel.magsq() / c / c);
-                //factor = sqrtf(1 - 2 * G * M / r / c / c);
+                //factor = sqrtf(1 - 2 * G * M / r / c / c - e.vel.magsq() / c / c);
+                factor = sqrtf(1 - 2 * G * M / r / c / c);
             } else {
-                // Pretend it's flat Minkowski for the moment.
-                 factor = 1;
+                //factor = sqrtf(2 * G * M / r / c / c - 1 - e.vel.magsq() / c / c);
+                factor = sqrtf(2 * G * M / r / c / c - 1);
             }
             return factor;
         };
@@ -592,33 +596,36 @@ int main() {
                     return e;
                 }
             }
-            return nullptr;
+            return null;
         };
         Guy *guy = find_guy();
         f32 guy_factor = 1;
-        //if (guy)
-         //guy_factor = get_time_dilation_factor(*guy);
+        if (guy)
+           guy_factor = get_time_dilation_factor(*guy);
         f32 largest_dt = 0;
         for (auto & e : entities) {
             f32 local_dt = dt * get_time_dilation_factor(e) / guy_factor;
             largest_dt = max(largest_dt, local_dt);
         }
-        log("largest dt %g", largest_dt);
+        //log("largest dt %g", largest_dt);
         for (auto &e : entities) {
+            //f32 factor = ;
             f32 local_dt = dt * get_time_dilation_factor(e) / guy_factor;
             if (&e == cast(EntityBase *) guy) {
-                //local_dt = dt;
+                local_dt = dt;
             }
             //f32 local_dt = dt;
             // @Temporary
             if (&e == cast(EntityBase *) guy) {
-                f32 speed = 100000000;
+                f32 speed = c / 100;
                 V2 input = {
                     (f32)(key('D') - key('A') + key(VK_RIGHT) - key(VK_LEFT)),
                     (f32)(key('W') - key('S') + key(VK_UP) - key(VK_DOWN)),
                 };
                 //e.vel += input.hat() * speed * local_dt;
-                e.vel = add_vel(e.vel, input.hat() * speed * local_dt);
+                V2 accel = input.hat() * speed * local_dt;
+                accel *= inv_lorentz(e.vel);
+                e.vel = add_vel(e.vel, accel);
             }
             if (e.vel.magsq() >= c * c) e.scheduled_for_destruction = true;
             
@@ -627,14 +634,22 @@ int main() {
                  //f32 r = e.pos.mag() / schwarzschild_radius;
                 //if (r < 0.01f) e.scheduled_for_destruction = true;
                 f32 r2 = e.pos.magsq();
+                f32 r3 = r2 * e.pos.mag();
                 //e.vel += -e.pos.hat() * G * M / r2 * local_dt;
                 f32 r4 = r2 * r2;
                 //e.vel += (-e.pos.hat() * (G * M / r2 + 3 * G * M / (c * c * r4))) * local_dt;
-                e.vel = add_vel(e.vel, (-e.pos.hat() * (G * M / r2 + 3 * G * M / (c * c * r4))) * local_dt);
+                V2 accel = (-e.pos.hat() * (G * M / r2 - L * L / r3 + 3 * G * M * L * L / (c * c * r4)));
+                //accel *= lorentz(e.vel);
+                e.vel = add_vel(e.vel, accel * local_dt);
+                //e.vel = e.vel + accel;
                 //const float K = 100000000.0f;
                  //V2 accel = K * -e.pos.hat() / (r*r*r*r*r);
                 //if (accel.magsq() < 0.001f*0.001f) e.scheduled_for_destruction = true;
                 //e.vel += accel * local_dt;
+            }
+            if (e.vel.mag() > c * 0.99f) {
+                e.vel *= c * 0.99f / e.vel.mag();
+                assert(e.vel.mag() <= c * 0.991f);
             }
             e.pos += e.vel * local_dt;
         }
@@ -652,8 +667,17 @@ int main() {
         if (key('K')) {
             shd_vs_uniform.camera_scale *= powf(0.5f, dt);
         }
+        
+        static int skipped = 0;
+        skipped += 1;
+        if (skipped % 10 != 0) continue;
+        sg_begin_default_pass(key('R') ? clear_action : load_action, window_w, window_h);
+        //sg_begin_default_pass(clear_action, window_w, window_h);
+        sg_apply_pipeline(pip);
+        sg_apply_bindings(&bind);
+        
         shd_vs_uniform.camera_pos = {};
-        if (guy) shd_vs_uniform.camera_pos = guy->pos;
+        //if (guy) shd_vs_uniform.camera_pos = guy->pos;
         for (auto &e : entities) {
             shd_vs_uniform.pos = e.pos;
             shd_vs_uniform.theta = 0;
@@ -696,7 +720,7 @@ int main() {
         } else {
             _sapp_dxgi_swap_chain->Present(0, 0);
         }
-        Sleep(cast(DWORD)(1000 * dt));
+        //Sleep(cast(DWORD)(1000 * dt));
     }
     sg_shutdown();
     return 0;
