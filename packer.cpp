@@ -44,9 +44,15 @@ bool write_entire_file(String name, String data) {
 
 int main() {
     String file = {};
-    if (!read_entire_file("shd.h"_s, &file)) {
+    if (!read_entire_file("shd.h\0"_s, &file)) {
         assert(false);
         return -1;
+    }
+    {
+    Memory_Block block = file;
+        assert(default_allocator.reallocate(&block, block.len + 1));
+        file = block;
+        file[file.len - 1] = 0;
     }
     defer {
         Memory_Block block = file;

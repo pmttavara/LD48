@@ -25,7 +25,7 @@ int assert_(const char *s) {
 }
 #define assert_2(LINE) #LINE
 #define assert_1(LINE) assert_2(LINE)
-#ifdef NDEBUG
+#ifndef NDEBUG
 #define assert(e) ((e) || assert_("At " __FILE__ ":" assert_1(__LINE__) ":\n\n" #e "\n\nPress Retry to debug.") && (__debugbreak(), 0))
 #else
 #define assert(e) ((void)(e))
@@ -68,11 +68,13 @@ template <class T> T sign(T x) {
     return (x > 0) - (x < 0);
 }
 
+struct Memory_Block;
 struct String {
     s64 len = 0;
     u8 *ptr = null;
     constexpr String() = default;
     constexpr String(s64 len, u8 *ptr) : len{len}, ptr{ptr} {}
+    String(const Memory_Block &b);
     bool null_terminated() {
         invariants();
         return (ptr[len - 1] == 0);
@@ -150,6 +152,7 @@ struct Memory_Block {
         return {cast(s64) len, ptr};
     }
 };
+String::String(const Memory_Block &b) : len{cast(s64) b.len}, ptr{b.ptr} {}
 enum struct Allocator_Mode {
     Allocate,
     Reallocate,

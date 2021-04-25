@@ -251,7 +251,7 @@ static void get_d3d11_device(sg_desc *desc, int framebuffer_width, int framebuff
     desc->context.d3d11.depth_stencil_view_cb = d3d11_depth_stencil_view_cb;
 }
 
- struct V2 {
+struct V2 {
     f32 x = 0;
     f32 y = 0;
     V2() = default;
@@ -307,6 +307,9 @@ static void get_d3d11_device(sg_desc *desc, int framebuffer_width, int framebuff
         return v;
     }
 };
+V2 operator*(f32 f, V2 v) {
+    return v * f;
+}
 #define v2(...) V2{__VA_ARGS__}
 
 #define EntityTypeEnum(Name) EntityType_##Name,
@@ -320,17 +323,21 @@ operator Name &() { return _##Name(); } \
 operator Name *() { return &_##Name(); }
 #define EntityCtor(Name) \
 Entity(const Name &param_##Name) { \
+assert(param_##Name.type == EntityType_##Name); \
 type = EntityType_##Name; \
 _##Name() = param_##Name; \
 } \
 Entity(Name &&param_##Name) { \
-type = EntityType_##Name; \
+assert(param_##Name.type == EntityType_##Name); \
 _##Name() = param_##Name; \
+type = EntityType_##Name; \
 }
 
 #define EntityList(X) \
 X(Guy) \
 X(Bullet) \
+
+#define CTOR(Name) Name() { type = EntityType_##Name; }
 
 enum EntityType {
     EntityType_Invalid,
@@ -344,9 +351,11 @@ struct EntityBase {
     V2 vel = {};
 };
 struct Guy : EntityBase {
+    CTOR(Guy);
     V2 aim_direction = {};
 };
 struct Bullet : EntityBase {
+    CTOR(Bullet);
 };
 struct Entity : EntityBase {
     Entity() = default;
@@ -359,7 +368,7 @@ struct Entity : EntityBase {
 struct shd_Vs_Uniform {
     V2 pos;
     f32 theta;
-     f32 scale;
+    f32 scale;
     V2 camera_pos;
     f32 camera_scale;
 };
@@ -379,9 +388,9 @@ int main() {
         wndclass.hCursor = LoadCursorA(null, cast(LPCSTR) IDC_ARROW),
         RegisterClassA(&wndclass);
         hwnd = CreateWindowExA(0, "wndclass", "Ringularity", WS_OVERLAPPEDWINDOW,
-                                   //CW_USEDEFAULT, SW_SHOW,
-                                   -1300, 300, // For stream!
-                                   640, 480, null, null, hinstance, null);
+                               //CW_USEDEFAULT, SW_SHOW,
+                               -1300, 300, // For stream!
+                               640, 480, null, null, hinstance, null);
     }
     int window_w = 1;
     int window_h = 1;
@@ -420,16 +429,6 @@ int main() {
     /* a shader to render the triangle */
     sg_shader_desc shd_desc = {};
     
-    Array<Entity> entities = {};
-    {
-        Guy guy = {};
-        guy.pos = {3, 0};
-        guy.vel = {0, 0.5f};
-        guy.aim_direction = {};
-        entities.push(guy);
-    }
-     Guy *guy = entities[0];
-    
     shd_desc.attrs[0].sem_name = "POS";
     shd_desc.attrs[1].sem_name = "COLOR";
     shd_desc.vs.source = shd_h;
@@ -451,8 +450,56 @@ int main() {
 #define keydown(vk) (GetFocus() == hwnd && keydown[vk])
     
     set_fullscreen(hwnd, true);
+    
+    const f32 G = 6.67430e-11f/1000/1000/1000;
+    const f32 c = 299792458.0f/1000;
+    const f32 desired_schwarzschild_radius = 1000000.0f;//149597900000.0f;
+    const f32 M = c * c * desired_schwarzschild_radius / 2 / G;
+    const f32 schwarzschild_radius = 2 * G * M / (c * c);
+    log("%g\n", schwarzschild_radius);
+    
+    restart:;
+    // Newtonian orbital velocity.
+    auto get_orbital_velocity = [&](V2 pos) -> V2 {
+        f32 r = pos.mag();
+        return sqrtf(G * M / r) * v2(-pos.y, pos.x).hat();
+    };
+    Array<Entity> entities = {};
+    {
+        Guy guy = {};
+        guy.pos = {schwarzschild_radius * 3 / 2, 0};
+        guy.vel = get_orbital_velocity(guy.pos) * 0.5f;
+        guy.aim_direction = {};
+        entities.push(guy);
+    }
+    {
+        Bullet bullet = {};
+        bullet.pos = {-schwarzschild_radius * 3 / 2, 0};
+        bullet.vel = get_orbital_velocity(bullet.pos);
+        entities.push(bullet);
+    }
+    {
+        Bullet bullet = {};
+        bullet.pos = {0, -schwarzschild_radius * 3 / 2};
+        bullet.vel = get_orbital_velocity(bullet.pos);
+        entities.push(bullet);
+    }
+    {
+        Bullet bullet = {};
+        bullet.pos = {0, +schwarzschild_radius * 3 / 2};
+        bullet.vel = get_orbital_velocity(bullet.pos);
+        entities.push(bullet);
+    }
+    {
+        Bullet bullet = {};
+        bullet.pos = {-schwarzschild_radius * 2, schwarzschild_radius * 2};
+        bullet.vel = get_orbital_velocity(bullet.pos);
+        entities.push(bullet);
+    }
+    Guy *guy = entities[0];
+    
     double last = get_time();
-    const f32 dt = 1.0f / 1000;
+    const f32 dt = 1.0f / 120;
     while (true) {
         while (get_time() - last < dt);
         enum { VK_COUNT = 256 };
@@ -470,6 +517,10 @@ int main() {
             TranslateMessage(&msg);
             DispatchMessageA(&msg);
         }
+        if (keydown('R') || keydown(VK_LBUTTON)) {
+            goto restart;
+        }
+        
         {
             RECT cr = {};
             GetClientRect(hwnd, &cr);
@@ -484,48 +535,80 @@ int main() {
         sg_apply_pipeline(pip);
         sg_apply_bindings(&bind);
         
-        if (keydown('R') || keydown(VK_LBUTTON)) {
-            guy->pos = {3, 0};
-            guy->vel = {0, 0.5f};
+        auto get_time_dilation_factor = [&](EntityBase &e) {
+            // Schwarzschild solution to the Einstein field equations
+            f32 r = e.pos.mag();
+            
+            //f32 gravity_factor = (1 - 2 * G * M / (r * c * c));
+            //assert(gravity_factor > 0);
+            //assert(gravity_factor < 1);
+            //f32 velocity_factor = (e.vel.magsq()) / (c * c);
+            //assert(velocity_factor > 0);
+            //assert(velocity_factor < 1);
+            //f32 general_term = gravity_factor;
+            //f32 special_term = 1/gravity_factor * velocity_factor;
+            //assert(general_term > special_term);
+            //f32 local_dt_sq = general_term - special_term;
+            //assert(local_dt_sq > 0);
+            //f32 local_dt = sqrtf(local_dt_sq) * dt;
+            
+            //f32 factor = 1 - (2*G*M/r)/c/c - 0.5f * e.vel.magsq()/c/c;
+            //f32 local_dt = dt * factor;
+            
+            //f32 ds_sq = (1 - 2 * G * M / r / c / c) * c * c * dt * dt - e.vel.magsq() * dt * dt;
+            //f32 factor = sqrtf(1 - 2 * G * M / r / c / c - e.vel.magsq() / c / c);
+            
+            // We neglect special relativity on purpose because otherwise we can't linearly add
+            // velocities. Just stay slow and fudge it!
+            f32 factor = 1;
+            if (r > schwarzschild_radius) {
+                factor = sqrtf(1 - 2 * G * M / r / c / c);
+            } else {
+                // Pretend it's flat Minkowski for the moment.
+                 factor = 1;
+            }
+            return factor;
+        };
+        f32 guy_factor = get_time_dilation_factor(*guy);
+        for (auto & e : entities) {
+            f32 local_dt = dt * get_time_dilation_factor(e) / guy_factor;
+            //f32 local_dt = dt;
+            // @Temporary
+            if (&e == cast(EntityBase *) guy) {
+                f32 speed = 100000;
+                V2 input = {
+                    (f32)(key('D') - key('A') + key(VK_RIGHT) - key(VK_LEFT)),
+                    (f32)(key('W') - key('S') + key(VK_UP) - key(VK_DOWN)),
+                };
+                e.vel += input.hat() * speed * local_dt;
+            }
+            
+            //if (e.pos.magsq() > 0.0001f)
+            {
+                f32 r2 = e.pos.magsq();
+                e.vel += -e.pos.hat() * G * M / r2 * local_dt;
+            }
+            e.pos += e.vel * local_dt;
         }
         
-        const float G = 1;
-        const float M = 1;
-        const float c = 1;
-        const float schwarzchild_radius = 2 * G * M / (c * c);
-        
-        shd_vs_uniform.camera_pos = {};//guy->pos;
-            shd_vs_uniform.camera_scale = 0.2f;
+        shd_vs_uniform.camera_pos = guy->pos;
+        shd_vs_uniform.camera_scale = 0.0000006f;
         for (auto & e : entities) {
-            // Gravitational time dilation
-            float localDt = dt * sqrtf(1 - (2 * G * M) / (e.pos.mag() * c * c));
-            
-            guy->vel.x += (key('D') - key('A')) * localDt;
-            guy->vel.y += (key('W') - key('S')) * localDt;
-            guy->vel.x += (key(VK_RIGHT) - key(VK_LEFT)) * localDt;
-            guy->vel.y += (key(VK_UP) - key(VK_DOWN)) * localDt;
-            
-            if (e.pos.magsq() > 0.0001f) {
-                //e.vel -= e.pos.hat() * 10.0f / powf(e.pos.magsq(), 5.0f / 2) * dt;
-                e.vel -= e.pos.hat() * 10.0f / e.pos.magsq() * localDt;
-            }
-            e.pos += e.vel * localDt;
             shd_vs_uniform.pos = e.pos;
             shd_vs_uniform.theta = 0;
-            shd_vs_uniform.scale = 0.3f;
-        sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
-        sg_draw(0, 3, 1);
+            shd_vs_uniform.scale = 0.02f / shd_vs_uniform.camera_scale;
+            sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
+            sg_draw(0, 3, 1);
         }
-        
         {
             shd_vs_uniform.pos = {};
-            shd_vs_uniform.scale = 0.1f;
+            shd_vs_uniform.scale = 0.02f / shd_vs_uniform.camera_scale;
             sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
             sg_draw(0, 3, 1);
             
             const int N = 128;
             for (int i = 0; i < N; i += 1) {
-                shd_vs_uniform.pos = v2(cosf(cast(f32) i / N * 3.14159f * 2), sinf(cast(f32) i / N * 3.14159f * 2)) * schwarzchild_radius;
+                shd_vs_uniform.pos = v2(cosf(cast(f32) i / N * 3.14159f * 2), sinf(cast(f32) i / N * 3.14159f * 2)) * schwarzschild_radius;
                 sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
                 sg_draw(0, 3, 1);
             }
@@ -534,10 +617,12 @@ int main() {
         {
             POINT p;
             GetCursorPos(&p);
-             ScreenToClient(hwnd, &p);
+            ScreenToClient(hwnd, &p);
             V2 mouse_pos = {cast(f32) p.x / window_w, cast(f32) -p.y / window_h};
             mouse_pos = mouse_pos*2 + v2(-1, +1);
-            sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(mouse_pos));
+            shd_vs_uniform.pos = (mouse_pos) / shd_vs_uniform.camera_scale + shd_vs_uniform.camera_pos;
+            shd_vs_uniform.scale = 0.02f / shd_vs_uniform.camera_scale;
+            sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
             sg_draw(0, 3, 1);
         }
         
