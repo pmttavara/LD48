@@ -326,6 +326,7 @@ template <class T> struct Array {
         invariants();
         assert(index < count);
         data[index] = data[count - 1];
+        count -= 1;
     }
     void remove_ordered(s64 index) {
         invariants();

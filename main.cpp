@@ -339,7 +339,7 @@ X(Bullet) \
 
 #define CTOR(Name) Name() { type = EntityType_##Name; }
 
-enum EntityType {
+enum EntityType : u8 {
     EntityType_Invalid,
     EntityList(EntityTypeEnum)
         
@@ -347,6 +347,7 @@ enum EntityType {
 };
 struct EntityBase {
     EntityType type = EntityType_Invalid;
+    bool scheduled_for_destruction = false;
     V2 pos = {};
     V2 vel = {};
 };
@@ -374,6 +375,26 @@ struct shd_Vs_Uniform {
 };
 shd_Vs_Uniform shd_vs_uniform;
 #include "assets.h"
+
+const f32 G = 6.67430e-11f;
+const f32 c = 299792458.0f;
+const f32 desired_schwarzschild_radius = 1000000000.0f;//149597900000.0f;
+const f32 M = c * c * desired_schwarzschild_radius / 2 / G;
+const f32 schwarzschild_radius = 2 * G * M / (c * c);
+
+float inv_lorentz(V2 v) {
+    return sqrtf(1 - v.magsq() / (c * c));
+}
+float lorentz(V2 v) {
+    return 1 / inv_lorentz(v);
+}
+V2 add_vel(V2 u, V2 v) { // returns u'
+    float first = 1 / (1 + v.dot(u) / c / c);
+    float alpha_v = inv_lorentz(v);
+    //V2 u_along_v = v * v.dot(u) / v.magsq();
+    V2 u_along_v = v.hat() * v.hat().dot(u);
+    return first * (alpha_v * u + v + (1 - alpha_v) * u_along_v);
+}
 
 int main() {
     log("Hello, world!");
@@ -451,12 +472,8 @@ int main() {
     
     set_fullscreen(hwnd, true);
     
-    const f32 G = 6.67430e-11f/1000/1000/1000;
-    const f32 c = 299792458.0f/1000;
-    const f32 desired_schwarzschild_radius = 1000000.0f;//149597900000.0f;
-    const f32 M = c * c * desired_schwarzschild_radius / 2 / G;
-    const f32 schwarzschild_radius = 2 * G * M / (c * c);
-    log("%g\n", schwarzschild_radius);
+    log("%g", schwarzschild_radius);
+    shd_vs_uniform.camera_scale = 0.5f / (schwarzschild_radius * 3 / 2);
     
     restart:;
     // Newtonian orbital velocity.
@@ -496,10 +513,9 @@ int main() {
         bullet.vel = get_orbital_velocity(bullet.pos);
         entities.push(bullet);
     }
-    Guy *guy = entities[0];
     
     double last = get_time();
-    const f32 dt = 1.0f / 120;
+    const f32 dt = 1.0f / 480;
     while (true) {
         while (get_time() - last < dt);
         enum { VK_COUNT = 256 };
@@ -517,7 +533,7 @@ int main() {
             TranslateMessage(&msg);
             DispatchMessageA(&msg);
         }
-        if (keydown('R') || keydown(VK_LBUTTON)) {
+        if (keydown('R')) {
             goto restart;
         }
         
@@ -562,38 +578,83 @@ int main() {
             // velocities. Just stay slow and fudge it!
             f32 factor = 1;
             if (r > schwarzschild_radius) {
-                factor = sqrtf(1 - 2 * G * M / r / c / c);
+                factor = sqrtf(1 - 2 * G * M / r / c / c - e.vel.magsq() / c / c);
+                //factor = sqrtf(1 - 2 * G * M / r / c / c);
             } else {
                 // Pretend it's flat Minkowski for the moment.
                  factor = 1;
             }
             return factor;
         };
-        f32 guy_factor = get_time_dilation_factor(*guy);
+        auto find_guy = [&]() -> Guy * {
+            for (auto &e : entities) {
+                if (e.type == EntityType_Guy) {
+                    return e;
+                }
+            }
+            return nullptr;
+        };
+        Guy *guy = find_guy();
+        f32 guy_factor = 1;
+        //if (guy)
+         //guy_factor = get_time_dilation_factor(*guy);
+        f32 largest_dt = 0;
         for (auto & e : entities) {
             f32 local_dt = dt * get_time_dilation_factor(e) / guy_factor;
+            largest_dt = max(largest_dt, local_dt);
+        }
+        log("largest dt %g", largest_dt);
+        for (auto &e : entities) {
+            f32 local_dt = dt * get_time_dilation_factor(e) / guy_factor;
+            if (&e == cast(EntityBase *) guy) {
+                //local_dt = dt;
+            }
             //f32 local_dt = dt;
             // @Temporary
             if (&e == cast(EntityBase *) guy) {
-                f32 speed = 100000;
+                f32 speed = 100000000;
                 V2 input = {
                     (f32)(key('D') - key('A') + key(VK_RIGHT) - key(VK_LEFT)),
                     (f32)(key('W') - key('S') + key(VK_UP) - key(VK_DOWN)),
                 };
-                e.vel += input.hat() * speed * local_dt;
+                //e.vel += input.hat() * speed * local_dt;
+                e.vel = add_vel(e.vel, input.hat() * speed * local_dt);
             }
+            if (e.vel.magsq() >= c * c) e.scheduled_for_destruction = true;
             
             //if (e.pos.magsq() > 0.0001f)
             {
+                 //f32 r = e.pos.mag() / schwarzschild_radius;
+                //if (r < 0.01f) e.scheduled_for_destruction = true;
                 f32 r2 = e.pos.magsq();
-                e.vel += -e.pos.hat() * G * M / r2 * local_dt;
+                //e.vel += -e.pos.hat() * G * M / r2 * local_dt;
+                f32 r4 = r2 * r2;
+                //e.vel += (-e.pos.hat() * (G * M / r2 + 3 * G * M / (c * c * r4))) * local_dt;
+                e.vel = add_vel(e.vel, (-e.pos.hat() * (G * M / r2 + 3 * G * M / (c * c * r4))) * local_dt);
+                //const float K = 100000000.0f;
+                 //V2 accel = K * -e.pos.hat() / (r*r*r*r*r);
+                //if (accel.magsq() < 0.001f*0.001f) e.scheduled_for_destruction = true;
+                //e.vel += accel * local_dt;
             }
             e.pos += e.vel * local_dt;
         }
+        for (s64 i = 0; i < entities.count;) {
+            if (entities[i].scheduled_for_destruction) {
+                entities.remove(i);
+            } else {
+                i += 1;
+            }
+        }
         
-        shd_vs_uniform.camera_pos = guy->pos;
-        shd_vs_uniform.camera_scale = 0.0000006f;
-        for (auto & e : entities) {
+        if (key('I')) {
+            shd_vs_uniform.camera_scale *= powf(2.0f, dt);
+        }
+        if (key('K')) {
+            shd_vs_uniform.camera_scale *= powf(0.5f, dt);
+        }
+        shd_vs_uniform.camera_pos = {};
+        if (guy) shd_vs_uniform.camera_pos = guy->pos;
+        for (auto &e : entities) {
             shd_vs_uniform.pos = e.pos;
             shd_vs_uniform.theta = 0;
             shd_vs_uniform.scale = 0.02f / shd_vs_uniform.camera_scale;
