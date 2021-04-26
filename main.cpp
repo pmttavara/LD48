@@ -415,7 +415,14 @@ V2 accel_from_force(V2 F, V2 v) {
     return inv_lorentz(v) * (F - v.dot(F) * v / c / c);
 }
 
-int main() {
+int main_();
+int WinMain(
+                      HINSTANCE hInstance,
+                      HINSTANCE hPrevInstance,
+                      LPSTR     lpCmdLine,
+                      int       nShowCmd
+                      ){return main_();}
+int main_() {
     log("Hello, world!");
     HWND hwnd = null;
     {
