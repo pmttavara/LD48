@@ -9,5 +9,5 @@ set "PATH=%vctoolsdir%\bin\amd64;%PATH%"
 ::-d2cgsummary
 ::cl -Od -Z7 -nologo -W4 -WX packer.cpp && packer
 if %errorlevel%==0 (
-    cl -O2 -Z7 -nologo -W4 -WX main.cpp && main
+    cl -Od -Z7 -nologo -W4 -WX main.cpp && main
 )

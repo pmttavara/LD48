@@ -597,18 +597,23 @@ int main() {
         auto dilation_special = [&](Entity &e) {
             return inv_lorentz(e.vel);
         };
-        auto find_guy = [&]() -> Guy * {
-            for (auto &e : entities) {
-                if (e.type == EntityType_Guy) {
-                    return cast(Guy *) &e;
-                }
-            }
-            return null;
-        };
-        Guy *guy = find_guy();
         f32 guy_general = 1;
         f32 guy_special = 1;
-        if (guy) { guy_general = dilation_general(*guy); guy_special = dilation_special(*guy); }
+        V2 guy_pos = {};
+        V2 guy_vel = {};
+        {
+            auto find_guy = [&]() -> Guy * {
+                for (auto &e : entities) {
+                    if (e.type == EntityType_Guy) {
+                        return cast(Guy *) &e;
+                    }
+                }
+                return null;
+            };
+            Guy *guy = find_guy();
+            if (guy) { guy_general = dilation_general(*guy); guy_special = dilation_special(*guy); }
+            if (guy) { guy_pos = guy->pos; guy_vel = guy->vel; }
+        }
         //log("largest dt %g", largest_dt);
         for (auto &e : entities) {
             f32 dt_ = dt;
@@ -621,7 +626,7 @@ int main() {
                 }
             };
             // @Temporary
-            if (&e == cast(EntityBase *) guy) {
+            if (e.type == EntityType_Guy) {
                 f32 speed = c / 100;
                 V2 input = {
                     (f32)(key('D') - key('A') + key(VK_RIGHT) - key(VK_LEFT)),
@@ -654,7 +659,6 @@ int main() {
         }
         for (s64 i = 0; i < entities.count;) {
             if (entities[i].scheduled_for_destruction) {
-                if (cast(Guy *) &entities[i] == guy) guy = null;
                 entities.remove(i);
             } else {
                 i += 1;
@@ -677,10 +681,10 @@ int main() {
         sg_apply_bindings(&bind);
         
         bool draw_inside = false;
-        if (guy && guy->pos.mag() < schwarzschild_radius) draw_inside = true;
+        if (guy_pos.mag() < schwarzschild_radius) draw_inside = true;
         shd_vs_uniform.camera_pos = {};
-        if (guy) shd_vs_uniform.camera_pos = guy->pos;
-        //if (guy) shd_vs_uniform.camera_scale = 0.6f / clamp(guy->pos.mag(), 0, schwarzschild_radius * 2);
+          shd_vs_uniform.camera_pos = guy_pos;
+        //if (guy) shd_vs_uniform.camera_scale = 0.6f / clamp(guy_pos.mag(), 0, schwarzschild_radius * 2);
         for (auto &e : entities) {
             if (!draw_inside && e.pos.mag() < schwarzschild_radius) continue;
             shd_vs_uniform.pos = e.pos;
@@ -727,7 +731,7 @@ int main() {
         } else {
             _sapp_dxgi_swap_chain->Present(0, 0);
         }
-        //Sleep(cast(DWORD)(1000 * dt));
+        Sleep(cast(DWORD)(1000 * dt));
     }
     sg_shutdown();
     return 0;
