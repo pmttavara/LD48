@@ -11,6 +11,9 @@ struct shd_Vs_Uniform {
      f32 scale;
     V2 camera_pos;
     f32 camera_scale;
+    f32 r;
+    f32 g;
+    f32 b;
 };
 
 //@
@@ -57,12 +60,19 @@ struct vs_out {
 vs_out vsmain(vs_in inp) {
     vs_out outp;
     outp.pos = inp.pos;
+    f32 c = cos(-shd_vs_uniform.theta);
+    f32 s = sin(-shd_vs_uniform.theta);
+    float2x2 mat = float2x2(c, -s, s, c);
+    outp.pos.xy = mul(outp.pos.xy, mat);
     outp.pos.xy *= shd_vs_uniform.scale;
     outp.pos.xy += shd_vs_uniform.pos;
     outp.pos.xy -= shd_vs_uniform.camera_pos;
     outp.pos.xy *= shd_vs_uniform.camera_scale;
     outp.color = inp.color;
-    outp.color.rgb = linear_srgb_to_oklab(outp.color);
+    outp.color.r = shd_vs_uniform.r;
+    outp.color.g = shd_vs_uniform.g;
+    outp.color.b = shd_vs_uniform.b;
+    outp.color.rgb = linear_srgb_to_oklab(outp.color.rgb);
     return outp;
 }
 V4 fsmain(V4 color: COLOR0): SV_Target0 {

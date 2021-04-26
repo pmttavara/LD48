@@ -7,7 +7,7 @@ set "INCLUDE=%vctoolsdir%\include;%winkits10include%\ucrt;%winkits8dir%\include\
 set "LIB=%vctoolsdir%\lib\amd64;%winkits8dir%\lib\winv6.3\um\x64;%winkits10lib%\ucrt\x64;"
 set "PATH=%vctoolsdir%\bin\amd64;%PATH%"
 ::-d2cgsummary
-::cl -Od -Z7 -nologo -W4 -WX packer.cpp && packer
+cl -Od -Z7 -nologo -W4 -WX packer.cpp && packer
 if %errorlevel%==0 (
     cl -Od -Z7 -nologo -W4 -WX main.cpp && main
 )

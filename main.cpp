@@ -30,8 +30,8 @@ intptr_t wnd_proc(HWND hwnd, unsigned int umsg, size_t wparam, intptr_t lparam) 
     return DefWindowProcA(hwnd, umsg, wparam, lparam);
 }
 
-double get_time(void) {
-    static double invfreq;
+f64 get_time(void) {
+    static f64 invfreq;
     union _LARGE_INTEGER li;
     if (invfreq == 0) {
         QueryPerformanceFrequency(&li);
@@ -385,6 +385,7 @@ struct shd_Vs_Uniform {
     f32 scale;
     V2 camera_pos;
     f32 camera_scale;
+    f32 color[3];
 };
 shd_Vs_Uniform shd_vs_uniform;
 #include "assets.h"
@@ -427,8 +428,8 @@ int main() {
         wndclass.hCursor = LoadCursorA(null, cast(LPCSTR) IDC_ARROW),
         RegisterClassA(&wndclass);
         hwnd = CreateWindowExA(0, "wndclass", "Ringularity", WS_OVERLAPPEDWINDOW,
-                               //CW_USEDEFAULT, SW_SHOW,
-                               -1300, 300, // For stream!
+                               CW_USEDEFAULT, SW_SHOW,
+                               //-1300, 300, // For stream!
                                640, 480, null, null, hinstance, null);
     }
     int window_w = 1;
@@ -489,23 +490,25 @@ int main() {
 #define key(vk) (GetFocus() == hwnd && cast(unsigned short) GetKeyState(vk) >= 0x8000)
 #define keydown(vk) (GetFocus() == hwnd && keydown[vk])
     
-    set_fullscreen(hwnd, true);
+    //set_fullscreen(hwnd, true);
     
     log("%g", schwarzschild_radius);
-    shd_vs_uniform.camera_scale = 0.5f / (schwarzschild_radius * 3);
+    shd_vs_uniform.camera_scale = 1.5f / (schwarzschild_radius * 3);
     
     // Newtonian orbital velocity.
     auto get_orbital_velocity = [&](V2 pos) -> V2 {
         f32 r = pos.mag();
         return sqrtf(G * M / r) * v2(-pos.y, pos.x).hat();
     };
-    restart:;
     Array<Entity> entities = {};
     defer {
         log("Releasing!");
         entities.release();
     };
-    if (1) {
+    entities.reserve(1024*1024);
+    restart:;
+    entities.clear();
+    {
         Guy guy = {};
         guy.pos = {schwarzschild_radius * 4, 0};
         guy.vel = get_orbital_velocity(guy.pos);
@@ -514,42 +517,45 @@ int main() {
     }
     {
          Enemy e = {};
-        e.pos = {schwarzschild_radius * 4 + 1000000, 0};
+        e.pos = {schwarzschild_radius * 4 + 100000000, 0};
         e.vel = get_orbital_velocity(e.pos);
         entities.push(e);
     }
     {
-        Bullet bullet = {};
-        bullet.pos = {-schwarzschild_radius * 4, 0};
-        bullet.vel = get_orbital_velocity(bullet.pos) * 0.75f;
+        Enemy bullet = {};
+        bullet.pos = {+schwarzschild_radius * 3.1f, 0};
+        bullet.vel = get_orbital_velocity(bullet.pos);// * 0.75f;
         entities.push(bullet);
     }
     {
-        Bullet bullet = {};
-        bullet.pos = {-schwarzschild_radius * 4, 0};
+        Enemy bullet = {};
+        bullet.pos = {-schwarzschild_radius * 3.5f, 0};
         bullet.vel = get_orbital_velocity(bullet.pos);
         entities.push(bullet);
     }
     {
-        Bullet bullet = {};
-        bullet.pos = {0, -schwarzschild_radius * 4};
+        Enemy bullet = {};
+        bullet.pos = {0, -schwarzschild_radius * 3.7f};
         bullet.vel = get_orbital_velocity(bullet.pos);
         entities.push(bullet);
     }
     {
-        Bullet bullet = {};
-        bullet.pos = {0, +schwarzschild_radius * 4};
+        Enemy bullet = {};
+        bullet.pos = {0, +schwarzschild_radius * 3.2f};
         bullet.vel = get_orbital_velocity(bullet.pos);
         entities.push(bullet);
     }
     {
-        Bullet bullet = {};
-        bullet.pos = {-schwarzschild_radius * 4, schwarzschild_radius * 4};
+        Enemy bullet = {};
+        bullet.pos = {-schwarzschild_radius * 3, schwarzschild_radius * 3};
         bullet.vel = get_orbital_velocity(bullet.pos);
         entities.push(bullet);
     }
     
-    double last = get_time();
+    ShowWindow(hwnd, SW_MAXIMIZE);
+    MessageBoxA(hwnd, "Press WASD to move!\n\nUse the mouse to aim, click to shoot!\n\nPress R to restart!\n\nUse the SCROLL WHEEL TO ZOOM! (You'll need it)\n\nKill all the enemies - but don't enter the black hole!!!!", "How to Play", 0);
+    
+    f64 last = get_time();
     const f32 dt = 1.0f / 120;
     const f32 timescale = 4.0f;
     while (true) {
@@ -565,6 +571,12 @@ int main() {
                 keydown[VK_LBUTTON] = true;
             } else if (msg.message == WM_RBUTTONDOWN) {
                 keydown[VK_RBUTTON] = true;
+            } else if (msg.message == WM_MOUSEWHEEL) {
+                if ((cast(int) msg.wParam >> 16) > 0) {
+                    shd_vs_uniform.camera_scale *= 1.125f;
+                } else if ((cast(int) msg.wParam >> 16) < 0) {
+                    shd_vs_uniform.camera_scale /= 1.125f;
+                }
             }
             TranslateMessage(&msg);
             DispatchMessageA(&msg);
@@ -579,7 +591,7 @@ int main() {
             window_w = cr.right - cr.left;
             window_h = cr.bottom - cr.top;
         }
-        if (keydown(VK_RETURN) && key(VK_MENU)) {
+        if ((keydown(VK_RETURN) && key(VK_MENU)) || keydown(VK_F11)) {
             set_fullscreen(hwnd, !is_fullscreen(hwnd));
         }
         
@@ -624,6 +636,9 @@ int main() {
             if (guy) { guy_general = dilation_general(*guy); guy_special = dilation_special(*guy); }
             if (guy) { guy_pos = guy->pos; guy_vel = guy->vel; }
         }
+        int num_enemies = 0;
+        bool has_guy = false;
+        bool guy_outside_event_horizon = false;
         //log("largest dt %g", largest_dt);
         for (s64 i = 0; i < entities.count; i += 1) {
             Entity &e = entities[i];
@@ -639,6 +654,7 @@ int main() {
             };
             // @Temporary
             if (e.type == EntityType_Guy) {
+                has_guy = true;
                 Guy &g = e._Guy();
                 f32 speed = c / 100;
                 V2 input = {
@@ -650,10 +666,39 @@ int main() {
                 e.vel = add_vel(e.vel, accel * dt_ * general * special);
                 
                 g.aim_direction = (mouse_pos - e.pos).hat();
+                if (keydown(VK_LBUTTON)) {
+                    Bullet b = {};
+                    b.pos = g.pos;
+                    b.vel = add_vel(g.vel, g.aim_direction * 100000000);
+                     entities.push(b);
+                }
+                if (e.pos.magsq() > sq(schwarzschild_radius)) {
+                    guy_outside_event_horizon = true;
+                }
+                if (e.pos.magsq() > sq(schwarzschild_radius * 6)) {
+                    MessageBoxA(hwnd, "You flew out of the solar system and got lost and then you starved.\nClick OK to retry :)", "You Lost!", 0);
+                    goto restart;
+                }
             }
             clamp_c();
             
+            if (e.type == EntityType_Enemy) {
+            for (auto &bullet : entities) {
+                    if (bullet.type != EntityType_Bullet) continue;
+                    
+                    V2 disp = bullet.pos - e.pos;
+                    if (disp.mag() < 20000000) {
+                        e.scheduled_for_destruction = true;
+                        break;
+                    }
+                }
+                if (e.pos.mag() >= schwarzschild_radius * 1.01f) {
+                num_enemies += 1;
+                }
+            }
+            
             if (e.pos.magsq() < sq(schwarzschild_radius * 0.01f)) { e.scheduled_for_destruction = true; continue; }
+            if (e.pos.magsq() > sq(schwarzschild_radius * 6)) { e.scheduled_for_destruction = true; continue; }
             {
                  f32 r2 = e.pos.magsq();
                 f32 r3 = r2 * e.pos.mag();
@@ -671,6 +716,14 @@ int main() {
             }
             clamp_c();
             e.pos += e.vel * dt_ * general * special;
+        }
+        if (!num_enemies && guy_outside_event_horizon) {
+            MessageBoxA(hwnd, "You killed all the enemies!\nClick OK to replay :)", "You Won!", 0);
+            goto restart;
+        }
+        if (!has_guy) {
+            MessageBoxA(hwnd, "You fell through the ringularity and got ejected out a white hole into another universe.\nClick OK to retry :)", "You Lost!", 0);
+            goto restart;
         }
         for (s64 i = 0; i < entities.count;) {
             if (entities[i].scheduled_for_destruction) {
@@ -702,18 +755,44 @@ int main() {
         //if (guy) shd_vs_uniform.camera_scale = 0.6f / clamp(guy_pos.mag(), 0, schwarzschild_radius * 2);
         for (auto &e : entities) {
             if (!draw_inside && e.pos.mag() < schwarzschild_radius) continue;
-            shd_vs_uniform.pos = e.pos;
+                shd_vs_uniform.pos = e.pos;
             shd_vs_uniform.theta = 0;
-            shd_vs_uniform.scale = 0.02f / shd_vs_uniform.camera_scale;
-            sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
-            sg_draw(0, 3, 1);
+            shd_vs_uniform.color[0] = 1;
+            shd_vs_uniform.color[1] = 1;
+            shd_vs_uniform.color[2] = 1;
             if (e.type == EntityType_Guy) {
+                shd_vs_uniform.color[2] = 1;
+                shd_vs_uniform.color[0] = 0.2f;
+                shd_vs_uniform.color[2] = 0.0f;
+                shd_vs_uniform.theta = atan2f(e._Guy().aim_direction.y, e._Guy().aim_direction.x) - 3.1415926535f/2;
+                shd_vs_uniform.scale = 0.02f * schwarzschild_radius;
+                sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
+                sg_draw(0, 3, 1);
                 shd_vs_uniform.pos = e.pos + e._Guy().aim_direction * 100000000;
+                shd_vs_uniform.scale = 0.01f * schwarzschild_radius;
+                sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
+                sg_draw(0, 3, 1);
+            } else if (e.type == EntityType_Enemy) {
+                shd_vs_uniform.color[0] = 1;
+                shd_vs_uniform.color[1] = 0.2f;
+                shd_vs_uniform.color[2] = 0.0f;
+                shd_vs_uniform.scale = 0.04f * schwarzschild_radius;
+                sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
+                sg_draw(0, 3, 1);
+            } else if (e.type == EntityType_Bullet) {
+                shd_vs_uniform.color[0] = 1;
+                shd_vs_uniform.color[1] = 1;
+                shd_vs_uniform.color[2] = 1;
+                shd_vs_uniform.scale = 0.005f * schwarzschild_radius;
                 sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
                 sg_draw(0, 3, 1);
             }
         }
         {
+            
+            shd_vs_uniform.color[0] = 1;
+            shd_vs_uniform.color[1] = 1;
+            shd_vs_uniform.color[2] = 1;
             
             shd_vs_uniform.pos = {};
             shd_vs_uniform.scale = 0.02f / shd_vs_uniform.camera_scale;
@@ -724,6 +803,7 @@ int main() {
             
             const int N = 128;
             for (int i = 0; i < N; i += 1) {
+                shd_vs_uniform.theta = cast(f32) i / N * 3.14159f * 2 - 3.14159f/2;
                 shd_vs_uniform.pos = v2(cosf(cast(f32) i / N * 3.14159f * 2), sinf(cast(f32) i / N * 3.14159f * 2)) * schwarzschild_radius;
                 sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
                 sg_draw(0, 3, 1);
@@ -731,8 +811,9 @@ int main() {
         }
         
         {
+            shd_vs_uniform.theta = 0;
             shd_vs_uniform.pos = mouse_pos;
-            shd_vs_uniform.scale = 0.02f / shd_vs_uniform.camera_scale;
+            shd_vs_uniform.scale = 0.005f / shd_vs_uniform.camera_scale;
             sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
             sg_draw(0, 3, 1);
         }
@@ -740,7 +821,7 @@ int main() {
         sg_end_pass();
         sg_commit();
         
-        ShowWindow(hwnd, true);
+        //ShowWindow(hwnd, true);
         if (_sapp_win32_update_dimensions(hwnd, window_w, window_h)) {
             _sapp_d3d11_resize_default_render_target();
         } else {
