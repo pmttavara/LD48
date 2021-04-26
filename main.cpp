@@ -583,6 +583,16 @@ int main() {
             set_fullscreen(hwnd, !is_fullscreen(hwnd));
         }
         
+        V2 mouse_pos = {};
+        {
+            POINT p;
+            GetCursorPos(&p);
+            ScreenToClient(hwnd, &p);
+             mouse_pos = {cast(f32) p.x / window_w, cast(f32) -p.y / window_h};
+            mouse_pos = mouse_pos*2 + v2(-1, +1);
+            mouse_pos = mouse_pos / shd_vs_uniform.camera_scale + shd_vs_uniform.camera_pos;
+        }
+        
         auto dilation_general = [&](Entity &e) {
             f32 r = e.pos.mag();
             f32 factor = 1;
@@ -615,8 +625,10 @@ int main() {
             if (guy) { guy_pos = guy->pos; guy_vel = guy->vel; }
         }
         //log("largest dt %g", largest_dt);
-        for (auto &e : entities) {
-            f32 dt_ = dt;
+        for (s64 i = 0; i < entities.count; i += 1) {
+            Entity &e = entities[i];
+            
+            f32 dt_ = dt * timescale;
             f32 general = dilation_general(e) / guy_general;
             f32 special = dilation_special(e) / guy_special;
             auto clamp_c = [&] {
@@ -627,6 +639,7 @@ int main() {
             };
             // @Temporary
             if (e.type == EntityType_Guy) {
+                Guy &g = e._Guy();
                 f32 speed = c / 100;
                 V2 input = {
                     (f32)(key('D') - key('A') + key(VK_RIGHT) - key(VK_LEFT)),
@@ -635,6 +648,8 @@ int main() {
                 V2 force = input.hat() * speed;
                 V2 accel = accel_from_force(force, e.vel);
                 e.vel = add_vel(e.vel, accel * dt_ * general * special);
+                
+                g.aim_direction = (mouse_pos - e.pos).hat();
             }
             clamp_c();
             
@@ -692,6 +707,11 @@ int main() {
             shd_vs_uniform.scale = 0.02f / shd_vs_uniform.camera_scale;
             sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
             sg_draw(0, 3, 1);
+            if (e.type == EntityType_Guy) {
+                shd_vs_uniform.pos = e.pos + e._Guy().aim_direction * 100000000;
+                sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
+                sg_draw(0, 3, 1);
+            }
         }
         {
             
@@ -711,12 +731,7 @@ int main() {
         }
         
         {
-            POINT p;
-            GetCursorPos(&p);
-            ScreenToClient(hwnd, &p);
-            V2 mouse_pos = {cast(f32) p.x / window_w, cast(f32) -p.y / window_h};
-            mouse_pos = mouse_pos*2 + v2(-1, +1);
-            shd_vs_uniform.pos = (mouse_pos) / shd_vs_uniform.camera_scale + shd_vs_uniform.camera_pos;
+            shd_vs_uniform.pos = mouse_pos;
             shd_vs_uniform.scale = 0.02f / shd_vs_uniform.camera_scale;
             sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
             sg_draw(0, 3, 1);
