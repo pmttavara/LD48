@@ -430,7 +430,7 @@ int main() {
         hwnd = CreateWindowExA(0, "wndclass", "Ringularity", WS_OVERLAPPEDWINDOW,
                                CW_USEDEFAULT, SW_SHOW,
                                //-1300, 300, // For stream!
-                               640, 480, null, null, hinstance, null);
+                               960, 960, null, null, hinstance, null);
     }
     int window_w = 1;
     int window_h = 1;
@@ -552,9 +552,11 @@ int main() {
         entities.push(bullet);
     }
     
-    ShowWindow(hwnd, SW_MAXIMIZE);
+    //ShowWindow(hwnd, SW_MAXIMIZE);
+    ShowWindow(hwnd, SW_SHOW);
     MessageBoxA(hwnd, "Press WASD to move!\n\nUse the mouse to aim, click to shoot!\n\nPress R to restart!\n\nUse the SCROLL WHEEL TO ZOOM! (You'll need it)\n\nKill all the enemies - but don't enter the black hole!!!!", "How to Play", 0);
     
+    bool paused = false;
     f64 last = get_time();
     const f32 dt = 1.0f / 120;
     const f32 timescale = 4.0f;
@@ -593,6 +595,9 @@ int main() {
         }
         if ((keydown(VK_RETURN) && key(VK_MENU)) || keydown(VK_F11)) {
             set_fullscreen(hwnd, !is_fullscreen(hwnd));
+        }
+        if (keydown(VK_ESCAPE)) {
+            paused = !paused;
         }
         
         V2 mouse_pos = {};
@@ -636,6 +641,7 @@ int main() {
             if (guy) { guy_general = dilation_general(*guy); guy_special = dilation_special(*guy); }
             if (guy) { guy_pos = guy->pos; guy_vel = guy->vel; }
         }
+        if (!paused) {
         int num_enemies = 0;
         bool has_guy = false;
         bool guy_outside_event_horizon = false;
@@ -732,12 +738,6 @@ int main() {
                 i += 1;
             }
         }
-        
-        if (key('I')) {
-            shd_vs_uniform.camera_scale *= powf(2.0f, dt);
-        }
-        if (key('K')) {
-            shd_vs_uniform.camera_scale *= powf(0.5f, dt);
         }
         
         static int skipped = 0;
@@ -801,12 +801,28 @@ int main() {
                 sg_draw(0, 3, 1);
             }
             
+            {
             const int N = 128;
             for (int i = 0; i < N; i += 1) {
                 shd_vs_uniform.theta = cast(f32) i / N * 3.14159f * 2 - 3.14159f/2;
                 shd_vs_uniform.pos = v2(cosf(cast(f32) i / N * 3.14159f * 2), sinf(cast(f32) i / N * 3.14159f * 2)) * schwarzschild_radius;
                 sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
                 sg_draw(0, 3, 1);
+            }
+            }
+            
+            {
+                const int N = 256;
+for (int i = 0; i < N; i += 1) {
+                shd_vs_uniform.color[0] = 0.1f;
+                shd_vs_uniform.color[1] = 0.0f;
+                shd_vs_uniform.color[2] = 0.0f;
+                
+                shd_vs_uniform.theta = cast(f32) i / N * 3.14159f * 2 - 3.14159f/2;
+                shd_vs_uniform.pos = v2(cosf(cast(f32) i / N * 3.14159f * 2), sinf(cast(f32) i / N * 3.14159f * 2)) * schwarzschild_radius * 6;
+                sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
+                sg_draw(0, 3, 1);
+                }
             }
         }
         
