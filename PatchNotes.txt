@@ -1,0 +1,7 @@
+Bugfix Patch v1.1:
+- Fixed bug where camera zoom did not reset
+- Fixed bug where enemies spawned in the same place every time
+- Fixed bug where slingshot maneuvers sent you out of the system
+- Fixed bug where mouse cursor was not being drawn
+- Fixed bug where the screen aspect ratio was wonky if you went maximized/fullscreen
+- Fixed bug where the game did not start maximized

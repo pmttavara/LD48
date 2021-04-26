@@ -14,6 +14,7 @@ struct shd_Vs_Uniform {
     f32 r;
     f32 g;
     f32 b;
+     V2 window_size;
 };
 
 //@
@@ -68,6 +69,10 @@ vs_out vsmain(vs_in inp) {
     outp.pos.xy += shd_vs_uniform.pos;
     outp.pos.xy -= shd_vs_uniform.camera_pos;
     outp.pos.xy *= shd_vs_uniform.camera_scale;
+    
+    outp.pos.x *= max(shd_vs_uniform.window_size.y / shd_vs_uniform.window_size.x, 1);
+    outp.pos.y *= max(shd_vs_uniform.window_size.x / shd_vs_uniform.window_size.y, 1);
+    
     outp.color = inp.color;
     outp.color.r = shd_vs_uniform.r;
     outp.color.g = shd_vs_uniform.g;

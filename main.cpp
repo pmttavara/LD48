@@ -386,6 +386,7 @@ struct shd_Vs_Uniform {
     V2 camera_pos;
     f32 camera_scale;
     f32 color[3];
+    V2 window_size;
 };
 shd_Vs_Uniform shd_vs_uniform;
 #include "assets.h"
@@ -397,15 +398,15 @@ const f32 desired_schwarzschild_radius = 1000000000.0f;//149597900000.0f;
 const f32 M = c * c * desired_schwarzschild_radius / 2 / G;
 const f32 schwarzschild_radius = 2 * G * M / (c * c);
 
-float inv_lorentz(V2 v) {
+f32 inv_lorentz(V2 v) {
     return sqrtf(1 - v.magsq() / (c * c));
 }
-float lorentz(V2 v) {
+f32 lorentz(V2 v) {
     return 1 / inv_lorentz(v);
 }
 V2 add_vel(V2 u, V2 v) { // returns u'
-    float first = 1 / (1 + v.dot(u) / c / c);
-    float alpha_v = lorentz(v);
+    f32 first = 1 / (1 + v.dot(u) / c / c);
+    f32 alpha_v = lorentz(v);
     //V2 u_along_v = v * v.dot(u) / v.magsq();
     V2 u_along_v = v.hat() * v.hat().dot(u);
     return first * (alpha_v * u + v + (1 - alpha_v) * u_along_v);
@@ -415,14 +416,14 @@ V2 accel_from_force(V2 F, V2 v) {
     return inv_lorentz(v) * (F - v.dot(F) * v / c / c);
 }
 
-int main_();
+int main();
 int WinMain(
                       HINSTANCE hInstance,
                       HINSTANCE hPrevInstance,
                       LPSTR     lpCmdLine,
                       int       nShowCmd
-                      ){return main_();}
-int main_() {
+                      ){return main();}
+int main() {
     log("Hello, world!");
     HWND hwnd = null;
     {
@@ -500,7 +501,6 @@ int main_() {
     //set_fullscreen(hwnd, true);
     
     log("%g", schwarzschild_radius);
-    shd_vs_uniform.camera_scale = 1.5f / (schwarzschild_radius * 3);
     
     // Newtonian orbital velocity.
     auto get_orbital_velocity = [&](V2 pos) -> V2 {
@@ -514,6 +514,7 @@ int main_() {
     };
     entities.reserve(1024*1024);
     restart:;
+    shd_vs_uniform.camera_scale = 1.5f / (schwarzschild_radius * 3);
     entities.clear();
     {
         Guy guy = {};
@@ -534,33 +535,15 @@ int main_() {
         bullet.vel = get_orbital_velocity(bullet.pos);// * 0.75f;
         entities.push(bullet);
     }
-    {
-        Enemy bullet = {};
-        bullet.pos = {-schwarzschild_radius * 3.5f, 0};
-        bullet.vel = get_orbital_velocity(bullet.pos);
-        entities.push(bullet);
-    }
-    {
-        Enemy bullet = {};
-        bullet.pos = {0, -schwarzschild_radius * 3.7f};
-        bullet.vel = get_orbital_velocity(bullet.pos);
-        entities.push(bullet);
-    }
-    {
-        Enemy bullet = {};
-        bullet.pos = {0, +schwarzschild_radius * 3.2f};
-        bullet.vel = get_orbital_velocity(bullet.pos);
-        entities.push(bullet);
-    }
-    {
-        Enemy bullet = {};
-        bullet.pos = {-schwarzschild_radius * 3, schwarzschild_radius * 3};
-        bullet.vel = get_orbital_velocity(bullet.pos);
-        entities.push(bullet);
+    for (s64 i = 0; i < 10; i += 1) {
+        Enemy e = {};
+        e.pos = v2(-schwarzschild_radius * (1.01f + 5 * cast(f32) rand() / RAND_MAX), schwarzschild_radius * (1.01f + 5 * cast(f32) rand() / RAND_MAX)) * 0.707106781187f;
+        e.vel = get_orbital_velocity(e.pos);
+        entities.push(e);
     }
     
-    //ShowWindow(hwnd, SW_MAXIMIZE);
-    ShowWindow(hwnd, SW_SHOW);
+    ShowWindow(hwnd, SW_MAXIMIZE);
+    //ShowWindow(hwnd, SW_SHOW);
     MessageBoxA(hwnd, "Press WASD to move!\n\nUse the mouse to aim, click to shoot!\n\nPress R to restart!\n\nUse the SCROLL WHEEL TO ZOOM! (You'll need it)\n\nKill all the enemies - but don't enter the black hole!!!!", "How to Play", 0);
     
     bool paused = false;
@@ -581,9 +564,9 @@ int main_() {
             } else if (msg.message == WM_RBUTTONDOWN) {
                 keydown[VK_RBUTTON] = true;
             } else if (msg.message == WM_MOUSEWHEEL) {
-                if ((cast(int) msg.wParam >> 16) > 0) {
+                if ((cast(s32) msg.wParam >> 16) > 0) {
                     shd_vs_uniform.camera_scale *= 1.125f;
-                } else if ((cast(int) msg.wParam >> 16) < 0) {
+                } else if ((cast(s32) msg.wParam >> 16) < 0) {
                     shd_vs_uniform.camera_scale /= 1.125f;
                 }
             }
@@ -614,6 +597,8 @@ int main_() {
             ScreenToClient(hwnd, &p);
              mouse_pos = {cast(f32) p.x / window_w, cast(f32) -p.y / window_h};
             mouse_pos = mouse_pos*2 + v2(-1, +1);
+            mouse_pos.x /= max(shd_vs_uniform.window_size.y / shd_vs_uniform.window_size.x, 1);
+            mouse_pos.y /= max(shd_vs_uniform.window_size.x / shd_vs_uniform.window_size.y, 1);
             mouse_pos = mouse_pos / shd_vs_uniform.camera_scale + shd_vs_uniform.camera_pos;
         }
         
@@ -688,7 +673,7 @@ int main_() {
                 if (e.pos.magsq() > sq(schwarzschild_radius)) {
                     guy_outside_event_horizon = true;
                 }
-                if (e.pos.magsq() > sq(schwarzschild_radius * 6)) {
+                if (e.pos.magsq() > sq(schwarzschild_radius * 12)) {
                     MessageBoxA(hwnd, "You flew out of the solar system and got lost and then you starved.\nClick OK to retry :)", "You Lost!", 0);
                     goto restart;
                 }
@@ -711,7 +696,7 @@ int main_() {
             }
             
             if (e.pos.magsq() < sq(schwarzschild_radius * 0.01f)) { e.scheduled_for_destruction = true; continue; }
-            if (e.pos.magsq() > sq(schwarzschild_radius * 6)) { e.scheduled_for_destruction = true; continue; }
+            if (e.pos.magsq() > sq(schwarzschild_radius * 12)) { e.scheduled_for_destruction = true; continue; }
             {
                  f32 r2 = e.pos.magsq();
                 f32 r3 = r2 * e.pos.mag();
@@ -760,6 +745,7 @@ int main_() {
         shd_vs_uniform.camera_pos = {};
           shd_vs_uniform.camera_pos = guy_pos;
         //if (guy) shd_vs_uniform.camera_scale = 0.6f / clamp(guy_pos.mag(), 0, schwarzschild_radius * 2);
+        shd_vs_uniform.window_size = v2(cast(f32) window_w, cast(f32) window_h);
         for (auto &e : entities) {
             if (!draw_inside && e.pos.mag() < schwarzschild_radius) continue;
                 shd_vs_uniform.pos = e.pos;
@@ -775,7 +761,7 @@ int main_() {
                 shd_vs_uniform.scale = 0.02f * schwarzschild_radius;
                 sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
                 sg_draw(0, 3, 1);
-                shd_vs_uniform.pos = e.pos + e._Guy().aim_direction * 100000000;
+                shd_vs_uniform.pos = e.pos + e._Guy().aim_direction * 10000000;
                 shd_vs_uniform.scale = 0.01f * schwarzschild_radius;
                 sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
                 sg_draw(0, 3, 1);
@@ -802,7 +788,7 @@ int main_() {
             shd_vs_uniform.color[2] = 1;
             
             shd_vs_uniform.pos = {};
-            shd_vs_uniform.scale = 0.02f / shd_vs_uniform.camera_scale;
+            shd_vs_uniform.scale = 0.06f * schwarzschild_radius;
             if (draw_inside) {
             sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
                 sg_draw(0, 3, 1);
@@ -826,7 +812,8 @@ for (int i = 0; i < N; i += 1) {
                 shd_vs_uniform.color[2] = 0.0f;
                 
                 shd_vs_uniform.theta = cast(f32) i / N * 3.14159f * 2 - 3.14159f/2;
-                shd_vs_uniform.pos = v2(cosf(cast(f32) i / N * 3.14159f * 2), sinf(cast(f32) i / N * 3.14159f * 2)) * schwarzschild_radius * 6;
+                    shd_vs_uniform.pos = v2(cosf(cast(f32) i / N * 3.14159f * 2), sinf(cast(f32) i / N * 3.14159f * 2)) * schwarzschild_radius * 12;
+                    shd_vs_uniform.scale = 0.2f * schwarzschild_radius;
                 sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
                 sg_draw(0, 3, 1);
                 }
@@ -834,9 +821,12 @@ for (int i = 0; i < N; i += 1) {
         }
         
         {
+            shd_vs_uniform.color[0] = 1.0f;
+            shd_vs_uniform.color[1] = 1.0f;
+            shd_vs_uniform.color[2] = 1.0f;
             shd_vs_uniform.theta = 0;
             shd_vs_uniform.pos = mouse_pos;
-            shd_vs_uniform.scale = 0.005f / shd_vs_uniform.camera_scale;
+            shd_vs_uniform.scale = 0.02f / shd_vs_uniform.camera_scale;
             sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, SG_RANGE_REF(shd_vs_uniform));
             sg_draw(0, 3, 1);
         }
